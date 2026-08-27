@@ -21,6 +21,9 @@ begin
 end;
 $$;
 
+revoke execute on function public.bump_rate_limit(text, text, int) from public;
+grant execute on function public.bump_rate_limit(text, text, int) to authenticated;
+
 create or replace function public.issue_code(p_purpose public.code_purpose, p_ip text)
 returns text
 language plpgsql
