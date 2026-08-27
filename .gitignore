@@ -5,3 +5,26 @@ node_modules/
 .env
 test-results/
 playwright-report/
+
+# next.js
+/out/
+
+# production
+/build
+
+# testing
+/coverage
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
