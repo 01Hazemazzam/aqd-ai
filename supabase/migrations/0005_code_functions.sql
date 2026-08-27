@@ -21,8 +21,11 @@ begin
 end;
 $$;
 
-revoke execute on function public.bump_rate_limit(text, text, int) from public;
-grant execute on function public.bump_rate_limit(text, text, int) to authenticated;
+-- No grant follows: bump_rate_limit has no legitimate direct caller. issue_code
+-- and verify_code call it internally, and as `security definer` functions they
+-- run that nested call under their own owner's privileges, not the original
+-- RPC caller's — so no external role needs EXECUTE here at all.
+revoke execute on function public.bump_rate_limit(text, text, int) from public, anon, authenticated;
 
 create or replace function public.issue_code(p_purpose public.code_purpose, p_ip text)
 returns text
