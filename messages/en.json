@@ -40,6 +40,7 @@
       "subtitle": "We'll email you a code to set a new password.",
       "email": "Email",
       "newPassword": "New password",
+      "code": "Reset code",
       "submit": "Send code",
       "confirm": "Set new password",
       "done": "Password changed. All trusted devices were signed out."
