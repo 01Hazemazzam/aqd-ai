@@ -227,25 +227,37 @@ const TOKENS = [
   'risk-high', 'risk-medium', 'risk-low',
 ]
 
+// The raw values live on unprefixed properties (--surface, --ink, …); the
+// @theme inline block maps each to the --color-* name Tailwind generates
+// utilities from. Keeping them separate is what avoids a self-referential
+// declaration, which Tailwind cannot resolve.
 describe('design tokens', () => {
-  it('defines every token in the light theme', () => {
+  it('defines every raw token in the light theme', () => {
     for (const t of TOKENS) {
-      expect(css).toContain(`--color-${t}:`)
+      expect(css).toContain(`--${t}:`)
     }
   })
 
-  it('redefines every token for the dark theme', () => {
+  it('redefines every raw token for the dark theme', () => {
     const dark = css.slice(css.indexOf('[data-theme="dark"]'))
     for (const t of TOKENS) {
-      expect(dark).toContain(`--color-${t}:`)
+      expect(dark).toContain(`--${t}:`)
     }
   })
 
-  it('expresses every colour in oklch', () => {
-    const decls = css.match(/--color-[a-z-]+:\s*([^;]+);/g) ?? []
-    expect(decls.length).toBeGreaterThan(0)
-    for (const d of decls) {
-      expect(d).toContain('oklch(')
+  it('expresses every raw colour value in oklch', () => {
+    const light = css.slice(css.indexOf(':root'), css.indexOf('@media'))
+    for (const t of TOKENS) {
+      const decl = light.match(new RegExp(`--${t}:\\s*([^;]+);`))
+      expect(decl, `--${t} missing from :root`).not.toBeNull()
+      expect(decl![1]).toContain('oklch(')
+    }
+  })
+
+  it('exposes every token to Tailwind through @theme inline', () => {
+    const theme = css.slice(css.indexOf('@theme inline'))
+    for (const t of TOKENS) {
+      expect(theme).toContain(`--color-${t}: var(--${t});`)
     }
   })
 })
@@ -261,19 +273,23 @@ Expected: FAIL — no `--color-surface` in the file.
 ```css
 @import "tailwindcss";
 
+/* Raw values on unprefixed names. @theme inline below maps each to the
+   --color-* name Tailwind builds utilities from. They must be different
+   names: `--color-x: var(--color-x)` is self-referential and resolves to
+   nothing, which silently renders every utility transparent. */
 :root {
-  --color-surface:     oklch(97% .008 85);
-  --color-surface-2:   oklch(99% .005 85);
-  --color-surface-3:   oklch(95% .011 85);
-  --color-edge:        oklch(89% .014 85);
-  --color-ink:         oklch(21% .006 75);
-  --color-ink-dim:     oklch(43% .012 80);
-  --color-ink-faint:   oklch(60% .013 80);
-  --color-accent:      oklch(44% .068 165);
-  --color-brass:       oklch(52% .069 78);
-  --color-risk-high:   oklch(53% .148 18);
-  --color-risk-medium: oklch(60% .112 70);
-  --color-risk-low:    oklch(53% .062 160);
+  --surface:     oklch(97% .008 85);
+  --surface-2:   oklch(99% .005 85);
+  --surface-3:   oklch(95% .011 85);
+  --edge:        oklch(89% .014 85);
+  --ink:         oklch(21% .006 75);
+  --ink-dim:     oklch(43% .012 80);
+  --ink-faint:   oklch(60% .013 80);
+  --accent:      oklch(44% .068 165);
+  --brass:       oklch(52% .069 78);
+  --risk-high:   oklch(53% .148 18);
+  --risk-medium: oklch(60% .112 70);
+  --risk-low:    oklch(53% .062 160);
 
   --leading-latin: 1.7;
   --leading-arabic: 1.9;
@@ -281,56 +297,56 @@ Expected: FAIL — no `--color-surface` in the file.
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-surface:     oklch(17% .017 250);
-    --color-surface-2:   oklch(20% .019 250);
-    --color-surface-3:   oklch(22% .020 250);
-    --color-edge:        oklch(28% .021 250);
-    --color-ink:         oklch(94% .008 250);
-    --color-ink-dim:     oklch(70% .028 250);
-    --color-ink-faint:   oklch(58% .031 250);
-    --color-accent:      oklch(78% .095 178);
-    --color-brass:       oklch(72% .118 88);
-    --color-risk-high:   oklch(75% .134 18);
-    --color-risk-medium: oklch(82% .108 82);
-    --color-risk-low:    oklch(80% .085 160);
+    --surface:     oklch(17% .017 250);
+    --surface-2:   oklch(20% .019 250);
+    --surface-3:   oklch(22% .020 250);
+    --edge:        oklch(28% .021 250);
+    --ink:         oklch(94% .008 250);
+    --ink-dim:     oklch(70% .028 250);
+    --ink-faint:   oklch(58% .031 250);
+    --accent:      oklch(78% .095 178);
+    --brass:       oklch(72% .118 88);
+    --risk-high:   oklch(75% .134 18);
+    --risk-medium: oklch(82% .108 82);
+    --risk-low:    oklch(80% .085 160);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-surface:     oklch(17% .017 250);
-  --color-surface-2:   oklch(20% .019 250);
-  --color-surface-3:   oklch(22% .020 250);
-  --color-edge:        oklch(28% .021 250);
-  --color-ink:         oklch(94% .008 250);
-  --color-ink-dim:     oklch(70% .028 250);
-  --color-ink-faint:   oklch(58% .031 250);
-  --color-accent:      oklch(78% .095 178);
-  --color-brass:       oklch(72% .118 88);
-  --color-risk-high:   oklch(75% .134 18);
-  --color-risk-medium: oklch(82% .108 82);
-  --color-risk-low:    oklch(80% .085 160);
+  --surface:     oklch(17% .017 250);
+  --surface-2:   oklch(20% .019 250);
+  --surface-3:   oklch(22% .020 250);
+  --edge:        oklch(28% .021 250);
+  --ink:         oklch(94% .008 250);
+  --ink-dim:     oklch(70% .028 250);
+  --ink-faint:   oklch(58% .031 250);
+  --accent:      oklch(78% .095 178);
+  --brass:       oklch(72% .118 88);
+  --risk-high:   oklch(75% .134 18);
+  --risk-medium: oklch(82% .108 82);
+  --risk-low:    oklch(80% .085 160);
 }
 
 @theme inline {
-  --color-surface:     var(--color-surface);
-  --color-surface-2:   var(--color-surface-2);
-  --color-surface-3:   var(--color-surface-3);
-  --color-edge:        var(--color-edge);
-  --color-ink:         var(--color-ink);
-  --color-ink-dim:     var(--color-ink-dim);
-  --color-ink-faint:   var(--color-ink-faint);
-  --color-accent:      var(--color-accent);
-  --color-brass:       var(--color-brass);
-  --color-risk-high:   var(--color-risk-high);
-  --color-risk-medium: var(--color-risk-medium);
-  --color-risk-low:    var(--color-risk-low);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-edge: var(--edge);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-brass: var(--brass);
+  --color-risk-high: var(--risk-high);
+  --color-risk-medium: var(--risk-medium);
+  --color-risk-low: var(--risk-low);
 }
 
-html { background: var(--color-surface); color: var(--color-ink); }
+html { background: var(--surface); color: var(--ink); }
 body { line-height: var(--leading-latin); }
 html[dir="rtl"] body { line-height: var(--leading-arabic); }
 
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -886,8 +902,9 @@ export function ClauseRow({ number, heading, body, severity = 'none', dir }: {
 }) {
   return (
     <article dir={dir} className="relative flex gap-3 rounded-xl border border-edge bg-surface-2 p-4">
-      {/* Logical inset, so the gutter mirrors in RTL with no second rule. */}
-      <span aria-hidden="true" className={cn('absolute inset-inline-start-0 top-4 bottom-4 w-[3px] rounded-full', GUTTER[severity])} />
+      {/* `start-0` is Tailwind's logical inset-inline-start, so the gutter
+          mirrors in RTL with no second rule and no physical property. */}
+      <span aria-hidden="true" className={cn('absolute start-0 top-4 bottom-4 w-[3px] rounded-full', GUTTER[severity])} />
       <span className="font-serif text-lg font-semibold leading-none text-brass">{number}</span>
       <div className="flex-1">
         <h3 className="mb-1 text-sm font-semibold text-ink">{heading}</h3>
@@ -1281,6 +1298,7 @@ Expected: FAIL — tables do not exist.
 
 ```sql
 create extension if not exists pgcrypto;
+create extension if not exists citext;
 
 create table public.organizations (
   id         uuid primary key default gen_random_uuid(),
@@ -1319,7 +1337,7 @@ alter table public.org_members   enable row level security;
 alter table public.invites       enable row level security;
 ```
 
-`citext` needs enabling — add `create extension if not exists citext;` above the `invites` table.
+Both extensions are enabled at the top of the migration: `pgcrypto` for `gen_random_uuid()` and `digest()`, `citext` for case-insensitive email comparison on `invites`.
 
 - [ ] **Step 5: Apply the migration**
 
@@ -2506,9 +2524,16 @@ describe('supabase client usage', () => {
     expect(offenders).toEqual([])
   })
 
+  // Middleware is the one documented exception: it must read and write cookies
+  // through the request/response pair, which `lib/supabase/server.ts` cannot do
+  // because that module goes through `next/headers`. Naming the exception here
+  // keeps the rule enforceable everywhere else.
+  const CLIENT_EXCEPTIONS = [join('src', 'middleware.ts')]
+
   it('constructs clients only inside lib/supabase', () => {
     const offenders = walk('src')
       .filter((f) => !f.includes(join('lib', 'supabase')))
+      .filter((f) => !CLIENT_EXCEPTIONS.some((e) => f.endsWith(e)))
       .filter((f) => /createServerClient|createBrowserClient/.test(readFileSync(f, 'utf8')))
     expect(offenders).toEqual([])
   })
@@ -3251,7 +3276,6 @@ Expected: FAIL — module not found.
 'use server'
 import { redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { validateSignup } from '../signup/validate'
 
 export async function requestReset(_prev: unknown, formData: FormData) {
   const email = String(formData.get('email') ?? '')
@@ -3560,7 +3584,7 @@ export default function ChallengePage() {
         <CodeInput label={t('code')} value={code} onChange={setCode} error={errorText} />
         <input type="hidden" name="code" value={code} />
         <label className="flex items-center gap-2 text-sm text-ink-dim">
-          <input type="checkbox" name="trust" defaultChecked className="accent-[var(--color-accent)]" />
+          <input type="checkbox" name="trust" defaultChecked className="accent-[var(--accent)]" />
           {t('trust')}
         </label>
         <Button type="submit" loading={pending} disabled={code.length < 6}>{t('submit')}</Button>
