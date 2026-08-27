@@ -1800,7 +1800,7 @@ describe('accept_invite', () => {
     const token = randomBytes(24).toString('base64url')
     const hash = createHash('sha256').update(token).digest()
     await asUser(userId)
-    const { rows: o } = await db.query(`select public.create_organization('Inviting Co') as org_id`)
+    const o = await db.query(`select public.create_organization('Inviting Co') as org_id`)
     await db.query(
       `insert into public.invites (org_id, email, role, token_hash, expires_at)
        values ($1, 'orgfn@test.local', 'member', $2, now() + interval '7 days')`,
@@ -1816,7 +1816,7 @@ describe('accept_invite', () => {
     const token = randomBytes(24).toString('base64url')
     const hash = createHash('sha256').update(token).digest()
     await asUser(userId)
-    const { rows: o } = await db.query(`select public.create_organization('Expired Co') as org_id`)
+    const o = await db.query(`select public.create_organization('Expired Co') as org_id`)
     await db.query(
       `insert into public.invites (org_id, email, role, token_hash, expires_at)
        values ($1, 'orgfn@test.local', 'member', $2, now() - interval '1 day')`,
@@ -1889,7 +1889,13 @@ begin
 
   select * into v_invite
   from public.invites
-  where token_hash = digest(p_token, 'sha256')
+  -- extensions.digest, not digest: this stack installs pgcrypto in the
+  -- `extensions` schema, and `set search_path = public` below pins the path
+  -- away from it. A plain session query still finds pgcrypto (Supabase's
+  -- default search_path includes extensions), so only functions with a
+  -- pinned search_path need the qualified call — found and fixed by Task 9's
+  -- implementer, applied here so the plan matches the committed migration.
+  where token_hash = extensions.digest(p_token, 'sha256')
     and accepted_at is null
     and expires_at > now()
     and email = v_email
@@ -2111,8 +2117,11 @@ begin
 
   v_code := lpad((floor(random() * 1000000))::int::text, 6, '0');
 
+  -- extensions.digest: this stack installs pgcrypto in `extensions`, and
+  -- `set search_path = public` above pins the path away from it — same fix
+  -- Task 9's implementer found and applied to accept_invite().
   insert into public.login_codes (user_id, code_hash, purpose, expires_at)
-  values (v_user, digest(v_code, 'sha256'), p_purpose, now() + interval '10 minutes');
+  values (v_user, extensions.digest(v_code, 'sha256'), p_purpose, now() + interval '10 minutes');
 
   insert into public.auth_events (user_id, kind) values (v_user, 'code_sent');
 
@@ -2156,7 +2165,7 @@ begin
     return 'code_expired';
   end if;
 
-  if v_row.code_hash <> digest(p_code, 'sha256') then
+  if v_row.code_hash <> extensions.digest(p_code, 'sha256') then
     update public.login_codes
     set attempt_count = attempt_count + 1,
         consumed_at = case when attempt_count + 1 >= 5 then now() else null end
@@ -2283,12 +2292,18 @@ Expected: FAIL — function does not exist.
 ```sql
 -- The stored value is a hash of the secret salted with the user id, so a
 -- database dump yields nothing an attacker can present as a device.
+-- extensions.digest, not digest: this function is always called from inside
+-- trust_device()/is_device_trusted(), both `security definer set search_path
+-- = public` — that pin applies for the duration of the outer call, including
+-- nested calls made within it, so an unqualified digest() would fail to
+-- resolve here too. Same root cause Task 9's implementer found in
+-- accept_invite().
 create or replace function public.device_digest(p_user uuid, p_secret text)
 returns bytea
 language sql
 immutable
 as $$
-  select digest(p_user::text || ':' || p_secret, 'sha256');
+  select extensions.digest(p_user::text || ':' || p_secret, 'sha256');
 $$;
 
 create or replace function public.trust_device(p_secret text, p_user_agent text, p_days int)
