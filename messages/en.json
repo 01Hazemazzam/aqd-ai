@@ -1,0 +1,72 @@
+{
+  "auth": {
+    "signup": {
+      "title": "Create your account",
+      "subtitle": "Analyze contracts in Arabic and English.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Create account",
+      "haveAccount": "Already have an account?",
+      "signIn": "Sign in"
+    },
+    "verify": {
+      "title": "Check your email",
+      "subtitle": "We sent a 6-digit code to {email}.",
+      "code": "Verification code",
+      "submit": "Verify",
+      "resend": "Resend code",
+      "resendIn": "Resend in {seconds}s",
+      "sendFailed": "We couldn't send the code. Try resending in a moment."
+    },
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Welcome back.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "forgot": "Forgot your password?",
+      "noAccount": "No account yet?",
+      "signUp": "Create one"
+    },
+    "challenge": {
+      "title": "Verify this device",
+      "subtitle": "This is a new device, so we emailed you a 6-digit code.",
+      "code": "Verification code",
+      "trust": "Trust this device for 30 days",
+      "submit": "Continue"
+    },
+    "reset": {
+      "title": "Reset your password",
+      "subtitle": "We'll email you a code to set a new password.",
+      "email": "Email",
+      "newPassword": "New password",
+      "submit": "Send code",
+      "confirm": "Set new password",
+      "done": "Password changed. All trusted devices were signed out."
+    },
+    "errors": {
+      "invalidCredentials": "That email and password combination isn't right.",
+      "invalidEmail": "Enter a valid email address.",
+      "weakPassword": "Use at least 10 characters.",
+      "codeIncorrect": "That code isn't right. {remaining} attempts left.",
+      "codeExpired": "That code has expired. Request a new one.",
+      "codeBurned": "Too many attempts. Request a new code.",
+      "rateLimited": "Too many requests. Try again in an hour."
+    }
+  },
+  "onboarding": {
+    "title": "Create your organization",
+    "subtitle": "Contracts, members and analysis all live inside an organization.",
+    "name": "Organization name",
+    "submit": "Create organization",
+    "inviteTitle": "You've been invited",
+    "inviteBody": "{org} invited you to join as {role}.",
+    "acceptInvite": "Accept invitation"
+  },
+  "common": {
+    "appName": "Aqd AI",
+    "loading": "Loading",
+    "theme": "Theme",
+    "language": "Language"
+  }
+}
