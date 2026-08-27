@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aqd AI (عقد)
 
-## Getting Started
+A bilingual (Arabic-first / English) AI contract-analysis platform: upload a contract, get it segmented into clauses, summarised, risk-scored against a legal playbook, and turned into an obligations calendar — then ask it questions through a citation-locked chat that refuses to answer from anything but the document itself.
 
-First, run the development server:
+This is a from-scratch rebuild, planned and built through a spec → design → implementation-plan → subagent-driven-execution pipeline. Full design rationale and history live in `docs/superpowers/`.
+
+## Status
+
+**Sub-project 1 of 5 — Foundation & Identity — is in progress.** This sub-project ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. It does not yet include contract upload, AI analysis, or chat — those are sub-projects 2–4.
+
+Full roadmap and the reasoning behind the five-way split: [`docs/superpowers/specs/2026-08-27-foundation-identity-design.md`](docs/superpowers/specs/2026-08-27-foundation-identity-design.md).
+
+| # | Sub-project | Status |
+|---|---|---|
+| 1 | **Foundation & Identity** | 🚧 In progress — see below |
+| 2 | Document pipeline & reader | Not started |
+| 3 | Analysis | Not started |
+| 4 | Citation-locked chat | Not started |
+| 5 | Product helper assistant & polish | Not started |
+
+### Sub-project 1 progress
+
+Twenty tasks, built and reviewed one at a time via `superpowers:subagent-driven-development` — a fresh implementer per task, an independent reviewer against every diff, and a fix loop for anything the reviewer finds. Full task-by-task plan: [`docs/superpowers/plans/2026-08-27-foundation-identity.md`](docs/superpowers/plans/2026-08-27-foundation-identity.md).
+
+| Lane | Tasks | Status |
+|---|---|---|
+| A — Frontend foundation | 1–5: scaffold, OKLCH design tokens (light + dark), UI kit, i18n/RTL | ✅ Done |
+| B — Database foundation | 6–12: Supabase schema, JWT org claims, identity tables, org lifecycle, code lifecycle, device trust, cross-tenant isolation proof | 🚧 In progress (through Task 11) |
+| C/D — Auth screens | 15–18: signup/verify, reset, login/challenge, onboarding | Not started |
+| — | 19–20: end-to-end journeys, visual/a11y/token audits | Not started |
+
+Lanes A and B were built concurrently in separate agents once both were unblocked, since they touch disjoint files.
+
+## What's built so far
+
+**Design system** (`src/app/globals.css`, `src/components/ui/`) — twelve OKLCH colour tokens, each defined once for light and once for dark, mapped into Tailwind v4 through a `@theme inline` block. Newsreader/Amiri for display type, Inter/IBM Plex Sans Arabic for UI, with Arabic body copy set at a deliberately looser line-height (1.9 vs Latin's 1.7). The kit: Button, Input, Card, Badge, Spinner, the six-box verification code input, risk severity pills (glyph *and* word, never colour alone), Tabs, and the clause row with a logical-CSS margin gutter that mirrors automatically in RTL.
+
+**Internationalisation** (`src/lib/i18n/`, `messages/`) — locale by cookie, `next-intl`, full English and Arabic message catalogs with parity enforced by a test that walks both files' key sets.
+
+**Multi-tenant schema** (`supabase/migrations/0001`–`0006`) — `organizations`/`org_members`/`invites` under Row-Level Security; a custom JWT hook that stamps `org_id`/`org_role` at token mint with a membership-table fallback for tokens minted before a user joined an org; `login_codes`/`trusted_devices`/`rate_limits`/`auth_events` for the identity layer; `create_organization()`/`accept_invite()` as the only two operations authorised to cross the tenancy boundary; a row-locked `issue_code()`/`verify_code()` pair implementing 6-digit codes with 10-minute expiry, 5-attempt burn, and purpose isolation (a signup code can't be replayed as a device challenge); `trust_device()`/`is_device_trusted()`/`revoke_all_devices()` for "remember this device for 30 days".
+
+**The load-bearing rule, same as the reference chatbot this plan borrowed patterns from:** server code always uses the caller's own session client, never a service-role key. RLS enforces tenancy at the database, not in application code.
+
+## Security model — read this before touching auth or schema
+
+- **`login_codes` grants `SELECT` to no one.** Not even the owning user. Codes are written and verified only inside `security definer` functions — a leaked query can't read a code hash.
+- **`verify_code` returns a status string, never raises.** A `raise exception` aborts the transaction and rolls back the very `attempt_count` increment meant to burn a code after 5 tries; the counter would sit at zero forever. Returning `'code_incorrect' | 'code_expired' | 'code_burned' | 'ok'` is what makes the burn durable.
+- **The code-verification race is closed with `FOR UPDATE`.** Two simultaneous verification attempts against one code lock the row; exactly one can succeed. Proven by a real concurrent-connection test, not asserted.
+- **Every stored secret is hashed, never plaintext**: invite tokens (`token_hash`), login codes (`code_hash`), device identifiers (`device_hash`, salted per-user via `device_digest()`).
+- **Helper functions that mutate shared state need their own privilege review, independent of their siblings.** `bump_rate_limit()` was found, mid-build, to have no `revoke`/`grant` block at all — Postgres's default left it callable by any client. The obvious fix (match the sibling pattern: revoke from `public`, grant to `authenticated`) turned out to be *incomplete*: Supabase grants `EXECUTE` to `anon` and `authenticated` separately from `PUBLIC` by default on every new function in `public`, and revoking from `PUBLIC` doesn't touch that. The real fix was revoking from `public, anon, authenticated` entirely — since `issue_code()`/`verify_code()` call `bump_rate_limit()` internally as `security definer` functions running under their own owner's privileges, they never needed a direct grant in the first place. Lesson: a function with no internal auth check is only as safe as its grants, and "matches its siblings" isn't proof those siblings' pattern was actually sufficient.
+
+## Local development quirks worth knowing
+
+Two non-obvious things were discovered building this, on this machine:
+
+1. **Supabase's default local ports may not be usable on Windows.** Windows/Hyper-V's WSL2 NAT reserves large, dynamic TCP port-exclusion ranges, and Supabase's entire default range (`54320`–`54329`) fell inside one on this machine — every port bind failed with "forbidden by its access permissions", not a real conflict with anything else running. `supabase/config.toml` here remaps every Supabase port by `+1000` into the clear `553xx` range (API `55321`, DB `55322`, Studio `55323`, etc.). If you hit the same error, check `netsh interface ipv4 show excludedportrange protocol=tcp` before assuming it's a port conflict with another process.
+2. **`pgcrypto` lives in the `extensions` schema on this Supabase stack, not `public`.** Any `security definer` function that pins `set search_path = public` (the norm for this project, to stop a caller shadow-injecting objects) cannot resolve a bare `digest(...)` call — it must be qualified as `extensions.digest(...)`. A plain session-level query doesn't need this, since Supabase's default connection `search_path` already includes `extensions`; it only bites inside a function that has explicitly pinned its own path.
+
+## Tech stack
+
+Next.js 16 (App Router), React 19, TypeScript strict, Tailwind CSS v4, next-intl, Supabase (Postgres 17, Auth, local dev via the CLI), Resend for transactional email. Vitest + Testing Library for unit/integration tests, Playwright + axe-core for browser and accessibility tests.
+
+## Getting started
 
 ```bash
+npm install
+npx supabase start   # requires Docker Desktop running
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy `.env.example` to `.env.local` and fill in the values `npx supabase start` prints (adjusting for the port remap above if you're on Windows and hit the same exclusion issue).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm test        # Vitest — unit, integration, and database tests
+npm run e2e      # Playwright — end-to-end and accessibility
+```
