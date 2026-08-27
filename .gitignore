@@ -1,4 +1,5 @@
 .superpowers/
+command-center-tracker.json
 node_modules/
 .next/
 .env.local
