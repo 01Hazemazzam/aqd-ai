@@ -1,26 +1,80 @@
 @import "tailwindcss";
 
+/* Raw values on unprefixed names. @theme inline below maps each to the
+   --color-* name Tailwind builds utilities from. They must be different
+   names: `--color-x: var(--color-x)` is self-referential and resolves to
+   nothing, which silently renders every utility transparent. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --surface:     oklch(97% .008 85);
+  --surface-2:   oklch(99% .005 85);
+  --surface-3:   oklch(95% .011 85);
+  --edge:        oklch(89% .014 85);
+  --ink:         oklch(21% .006 75);
+  --ink-dim:     oklch(43% .012 80);
+  --ink-faint:   oklch(60% .013 80);
+  --accent:      oklch(44% .068 165);
+  --brass:       oklch(52% .069 78);
+  --risk-high:   oklch(53% .148 18);
+  --risk-medium: oklch(60% .112 70);
+  --risk-low:    oklch(53% .062 160);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --leading-latin: 1.7;
+  --leading-arabic: 1.9;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --surface:     oklch(17% .017 250);
+    --surface-2:   oklch(20% .019 250);
+    --surface-3:   oklch(22% .020 250);
+    --edge:        oklch(28% .021 250);
+    --ink:         oklch(94% .008 250);
+    --ink-dim:     oklch(70% .028 250);
+    --ink-faint:   oklch(58% .031 250);
+    --accent:      oklch(78% .095 178);
+    --brass:       oklch(72% .118 88);
+    --risk-high:   oklch(75% .134 18);
+    --risk-medium: oklch(82% .108 82);
+    --risk-low:    oklch(80% .085 160);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --surface:     oklch(17% .017 250);
+  --surface-2:   oklch(20% .019 250);
+  --surface-3:   oklch(22% .020 250);
+  --edge:        oklch(28% .021 250);
+  --ink:         oklch(94% .008 250);
+  --ink-dim:     oklch(70% .028 250);
+  --ink-faint:   oklch(58% .031 250);
+  --accent:      oklch(78% .095 178);
+  --brass:       oklch(72% .118 88);
+  --risk-high:   oklch(75% .134 18);
+  --risk-medium: oklch(82% .108 82);
+  --risk-low:    oklch(80% .085 160);
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-edge: var(--edge);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-brass: var(--brass);
+  --color-risk-high: var(--risk-high);
+  --color-risk-medium: var(--risk-medium);
+  --color-risk-low: var(--risk-low);
+}
+
+html { background: var(--surface); color: var(--ink); }
+body { line-height: var(--leading-latin); }
+html[dir="rtl"] body { line-height: var(--leading-arabic); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
