@@ -1415,8 +1415,15 @@ describe('jwt claims', () => {
     expect(rows[0].event.claims.org_role).toBe('owner')
   })
 
+  // set_config's third argument is `false` (session-level), not `true`
+  // (transaction-local): a plain pg.Client runs each query() call as its own
+  // autocommitted transaction, so a LOCAL-scoped value set in one call is gone
+  // before the next call runs. Session-level survives across calls. This
+  // doesn't affect the real hook — PostgREST wraps a whole request in one
+  // transaction, where LOCAL would work too — it only matters for a test that
+  // sets the GUC and reads it back in separate round-trips.
   it('falls back to the membership table when the claim is absent', async () => {
-    await db.query(`select set_config('request.jwt.claims', $1, true)`, [
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [
       JSON.stringify({ sub: userId }),
     ])
     const { rows } = await db.query(`select public.jwt_org_id() as org_id`)
@@ -1424,7 +1431,7 @@ describe('jwt claims', () => {
   })
 
   it('prefers the claim over the fallback when both exist', async () => {
-    await db.query(`select set_config('request.jwt.claims', $1, true)`, [
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [
       JSON.stringify({ sub: userId, org_id: orgId }),
     ])
     const { rows } = await db.query(`select public.jwt_org_id() as org_id`)
@@ -1750,8 +1757,12 @@ const DB = process.env.SUPABASE_DB_URL ?? 'postgresql://postgres:postgres@127.0.
 let db: Client
 let userId: string
 
+// `false` = session-level, not transaction-local. A plain pg.Client
+// autocommits each query() call separately, so a LOCAL-scoped value set here
+// would be gone before the next query() runs jwt_org_id()/create_organization()
+// — this is the exact bug Task 7's claims.test.ts hit and diagnosed first.
 const asUser = async (id: string) =>
-  db.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: id })])
+  db.query(`select set_config('request.jwt.claims', $1, false)`, [JSON.stringify({ sub: id })])
 
 beforeAll(async () => {
   db = new Client({ connectionString: DB }); await db.connect()
