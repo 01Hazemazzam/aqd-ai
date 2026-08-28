@@ -53,7 +53,7 @@ test('a new user signs up, verifies, and reaches the dashboard', async ({ page }
   await page.getByLabel('Organization name').fill('E2E Legal')
   await page.getByRole('button', { name: 'Create organization' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Aqd AI' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: "You're in." })).toBeVisible()
 })
 
 test('an unverified visitor cannot reach the app by URL', async ({ page }) => {
