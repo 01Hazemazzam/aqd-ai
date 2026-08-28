@@ -6,14 +6,14 @@ This is a from-scratch rebuild, planned and built through a spec → design → 
 
 ## Status
 
-**Sub-project 1 of 5 — Foundation & Identity — is complete.** This sub-project ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. It does not yet include contract upload, AI analysis, or chat — those are sub-projects 2–4.
+**Sub-projects 1 and 2 of 5 are complete.** Foundation & Identity ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. Document pipeline & reader adds direct-to-Storage upload, PDF/DOCX parsing, regex-based AR/EN clause segmentation, and a clause-by-clause reader — no AI yet, that's sub-project 3.
 
 Full roadmap and the reasoning behind the five-way split: [`docs/superpowers/specs/2026-08-27-foundation-identity-design.md`](docs/superpowers/specs/2026-08-27-foundation-identity-design.md).
 
 | # | Sub-project | Status |
 |---|---|---|
 | 1 | **Foundation & Identity** | ✅ Complete — see below |
-| 2 | Document pipeline & reader | Not started |
+| 2 | **Document pipeline & reader** | ✅ Complete — see below |
 | 3 | Analysis | Not started |
 | 4 | Citation-locked chat | Not started |
 | 5 | Product helper assistant & polish | Not started |
@@ -32,6 +32,10 @@ Twenty tasks, built and reviewed one at a time via `superpowers:subagent-driven-
 Lanes A and B were built concurrently in separate agents once both were unblocked, since they touch disjoint files; Lanes C and D (signup/verify vs. login/challenge) were likewise built concurrently once the shared auth module landed.
 
 After all 20 tasks passed review, a user-directed design pass filled in what the plan had deliberately left thin (a real branded panel instead of an empty rectangle, a working dashboard placeholder, a distinct wordmark treatment) and, in the course of that work, caught and fixed a real latent bug: `font-serif`/`font-sans` had never actually been wired to the fonts loaded in `layout.tsx`, so every screen had been silently rendering system-default fonts since Task 2. See **What's built so far** below for what that pass changed.
+
+### Sub-project 2 progress
+
+`supabase/migrations/0008`–`0010` add `contracts`/`contract_files`/`contract_versions`/`clauses` under the same org-scoped RLS pattern as sub-project 1, plus a private `contracts` Storage bucket whose object policies trust only the `org_id` folder segment in the path (`{org_id}/{contract_id}/{filename}`), checked against the caller's own JWT. Upload is client → Storage direct via a signed upload URL (`createSignedUploadUrl`/`uploadToSignedUrl`), the same body-limit-avoidance pattern the original spec called out. `src/lib/ingest/parse.ts` (unpdf for PDF, mammoth for DOCX) extracts raw text; `src/lib/ingest/segment.ts` splits it into clauses via ordered regex heading patterns — `المادة`/`البند`, `Article`/`Section`/`Clause`, and bare `1.`/`1.1)` numbering, each in Western or Arabic-Indic digits — with a paragraph-break fallback for unnumbered documents, and per-clause language detection (Arabic-block character count vs. Latin) so one English clause inside an otherwise-Arabic contract renders LTR while the rest stays RTL. Checksum-based dedup (`contract_files.checksum_sha256`, hex text rather than `bytea` — queried directly from `supabase-js` for the dedup lookup, unlike `code_hash`/`device_hash`, which only ever go through security-definer SQL) means re-uploading identical bytes reuses the existing file row instead of re-parsing. `tests/ingest/pipeline.test.ts` exercises the real thing end to end — sign up, create an org, request a signed URL, upload real file bytes to the real local Storage API, download them back, parse, segment, and insert clauses under RLS — against a hand-built bilingual DOCX fixture (`tests/fixtures/`) and a hand-built PDF, not mocks.
 
 ## What's built so far
 
@@ -76,6 +80,7 @@ Five non-obvious things were discovered building this, on this machine:
 3. **Playwright's config does not auto-load `.env.local`.** Unlike Next's own dev server and Vitest's `tests/setup.ts`, `playwright.config.ts` needs its own `process.loadEnvFile('.env.local')` or any DB-reading e2e test silently falls back to Supabase's stock port instead of this stack's remapped one.
 4. **`--update-snapshots` alone will not refresh a baseline that still passes.** Playwright rewrites only *failing* snapshots, and `e2e/visual.spec.ts` allows a `maxDiffPixelRatio` of 0.01. A change smaller than 1% of the frame — adding the theme and language buttons was roughly 0.3% — compares as a pass, so the baseline silently keeps the old UI while the tests stay green. After any deliberate visual change, regenerate with `npx playwright test e2e/visual.spec.ts --update-snapshots=all` and review the images, or the reference drifts out of date without ever failing.
 5. **Port 3000 is not exclusively this project's.** If another local project is already listening on 3000 when `npm run e2e` starts, Playwright's `reuseExistingServer: true` will silently reuse the *wrong app* instead of failing — every test result would be nonsense, not a clean error. `playwright.config.ts` here is remapped to port 3002 for that reason; check `netstat -ano | grep ":3002 "` before assuming a stale process is yours to kill.
+6. **Two Claude Code sessions editing this repo at once can crash `next dev`'s compiler worker pool.** Hitting a brand-new dynamic route (`/contracts/[id]`, first compile) once returned a 500 with `Jest worker encountered 2 child process exceptions, exceeding retry limit`, reproducibly, even on a page stripped down to a one-line stub — while a brand-new *static* route compiled fine at the same time. That split (dynamic route fails, static route works, content doesn't matter) pointed away from a code bug; the actual cause was a second concurrent session hot-reloading the same running server. Restarting `next dev` cleared it. If a route that should be trivial won't compile, check for another session sharing the same dev server before debugging the route's own code.
 
 ## Tech stack
 
