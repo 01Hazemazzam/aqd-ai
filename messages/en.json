@@ -100,6 +100,26 @@
       "download_failed": "We couldn't read the uploaded file. Try again.",
       "parse_failed": "We couldn't extract text from this document.",
       "unknown": "Something went wrong. Please try again."
+    },
+    "analyzeCta": "Analyze",
+    "reanalyzeCta": "Re-analyze",
+    "analyzing": "Analyzing…",
+    "analyzeErrors": {
+      "no_version": "This contract has no processed version yet.",
+      "no_clauses": "This contract has no clauses to analyze.",
+      "ai_disabled": "AI analysis isn't configured yet. Add an API key to enable it.",
+      "unknown": "Something went wrong during analysis. Please try again."
+    },
+    "summaryTitle": "Summary",
+    "fieldsTitle": "Key fields",
+    "obligationsTitle": "Obligations",
+    "generalFindingsTitle": "Other findings",
+    "fieldLabels": {
+      "parties": "Parties",
+      "effectiveDate": "Effective date",
+      "termLength": "Term",
+      "governingLaw": "Governing law",
+      "totalValue": "Total value"
     }
   },
   "common": {

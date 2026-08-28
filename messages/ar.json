@@ -100,6 +100,26 @@
       "download_failed": "تعذّرت قراءة الملف المرفوع. حاول مرة أخرى.",
       "parse_failed": "تعذّر استخراج النص من هذا المستند.",
       "unknown": "حدث خطأ ما. حاول مرة أخرى."
+    },
+    "analyzeCta": "تحليل",
+    "reanalyzeCta": "إعادة التحليل",
+    "analyzing": "جارٍ التحليل…",
+    "analyzeErrors": {
+      "no_version": "لا توجد نسخة معالجة لهذا العقد بعد.",
+      "no_clauses": "لا توجد بنود لتحليلها في هذا العقد.",
+      "ai_disabled": "التحليل الذكي غير مُفعّل بعد. أضف مفتاح API لتفعيله.",
+      "unknown": "حدث خطأ أثناء التحليل. حاول مرة أخرى."
+    },
+    "summaryTitle": "الملخص",
+    "fieldsTitle": "الحقول الرئيسية",
+    "obligationsTitle": "الالتزامات",
+    "generalFindingsTitle": "ملاحظات أخرى",
+    "fieldLabels": {
+      "parties": "الأطراف",
+      "effectiveDate": "تاريخ السريان",
+      "termLength": "المدة",
+      "governingLaw": "القانون الواجب التطبيق",
+      "totalValue": "القيمة الإجمالية"
     }
   },
   "common": {
