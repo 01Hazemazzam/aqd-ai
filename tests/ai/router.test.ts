@@ -1,6 +1,6 @@
 // tests/ai/router.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { aiComplete, callAnthropic, callGemini, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
+import { aiComplete, callAnthropic, callGemini, streamGeminiText, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
 
 const ANTHROPIC_SPEC = { provider: 'anthropic' as const, model: 'claude-test', inputPricePerMTok: 3, outputPricePerMTok: 15 }
 const GEMINI_SPEC = { provider: 'gemini' as const, model: 'gemini-test', inputPricePerMTok: 0.1, outputPricePerMTok: 0.4 }
@@ -170,5 +170,72 @@ describe('aiComplete', () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(400, { error: 'bad request' }))
     await expect(aiComplete('main', 'sys', 'user', { fetchImpl })).rejects.toBeInstanceOf(AiUpstreamError)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Streams a raw SSE body through a real ReadableStream, split into
+// arbitrary read()-sized pieces, so the test exercises the same
+// incremental-decode path streamGeminiText actually runs in production.
+function sseStreamResponse(rawBody: string, chunkSize = 40) {
+  const bytes = new TextEncoder().encode(rawBody)
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += chunkSize) controller.enqueue(bytes.slice(i, i + chunkSize))
+      controller.close()
+    },
+  })
+  return { ok: true, status: 200, body: stream, text: async () => rawBody } as unknown as Response
+}
+
+describe('streamGeminiText', () => {
+  const originalKey = process.env.GEMINI_API_KEY
+  beforeEach(() => {
+    process.env.GEMINI_API_KEY = 'test-key'
+  })
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.GEMINI_API_KEY
+    else process.env.GEMINI_API_KEY = originalKey
+  })
+
+  async function collect(gen: AsyncGenerator<{ textDelta: string }>) {
+    const chunks: string[] = []
+    for await (const c of gen) chunks.push(c.textDelta)
+    return chunks
+  }
+
+  it('yields text deltas from a CRLF-terminated SSE stream (the real Gemini wire format)', async () => {
+    // A real Gemini streamGenerateContent response failed to yield ANY
+    // chunks because it uses \r\n\r\n frame separators, not the bare \n\n
+    // this parser originally assumed -- confirmed by capturing a real
+    // response body. This fixture reproduces that exact format.
+    const body =
+      'data: {"candidates":[{"content":{"parts":[{"text":"Cats are"}]}}]}\r\n\r\n' +
+      'data: {"candidates":[{"content":{"parts":[{"text":" independent."}]}}]}\r\n\r\n'
+    const fetchImpl = vi.fn().mockResolvedValue(sseStreamResponse(body))
+    const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
+    expect(chunks).toEqual(['Cats are', ' independent.'])
+  })
+
+  it('also handles bare-LF frame separators, in case that ever changes', async () => {
+    const body = 'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n'
+    const fetchImpl = vi.fn().mockResolvedValue(sseStreamResponse(body))
+    const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
+    expect(chunks).toEqual(['hi'])
+  })
+
+  it('reassembles a frame split across multiple stream reads', async () => {
+    const body = 'data: {"candidates":[{"content":{"parts":[{"text":"split text"}]}}]}\r\n\r\n'
+    const fetchImpl = vi.fn().mockResolvedValue(sseStreamResponse(body, 5)) // tiny chunks force a mid-frame split
+    const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
+    expect(chunks).toEqual(['split text'])
+  })
+
+  it('throws AiDisabledError with no key configured', async () => {
+    delete process.env.GEMINI_API_KEY
+    await expect(collect(streamGeminiText('main', 'sys', 'user'))).rejects.toBeInstanceOf(AiDisabledError)
+  })
+
+  it('throws when the tier resolves to a non-Gemini provider', async () => {
+    await expect(collect(streamGeminiText('heavy', 'sys', 'user'))).rejects.toMatchObject({ name: 'AiUpstreamError' })
   })
 })

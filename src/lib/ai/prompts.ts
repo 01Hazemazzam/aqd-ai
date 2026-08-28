@@ -69,6 +69,59 @@ export function obligationsPrompt(clauses: PromptClause[]) {
   }
 }
 
+export interface RetrievedClause {
+  clauseNumber: string | null
+  lang: 'ar' | 'en'
+  body: string
+}
+
+const NOT_FOUND_TOKEN = 'NOT_FOUND'
+
+// Retrieved clauses are numbered 1..N in retrieval order for citation
+// purposes -- deliberately NOT the document's own clause_number (which can
+// repeat across contracts, be null for a paragraph-fallback clause, or not
+// match retrieval order), so [n] always resolves unambiguously to exactly
+// one of the clauses actually shown to the model.
+function renderRetrievedClauses(clauses: RetrievedClause[]): string {
+  return clauses.map((c, i) => `[${i + 1}]\n${c.body}`).join('\n\n')
+}
+
+export function chatPrompt(question: string, retrievedClauses: RetrievedClause[]) {
+  const system = `You are a contract Q&A assistant. Answer the user's question using ONLY the numbered clauses below -- they are the only excerpts retrieved as relevant to this question, not the whole document, so don't assume anything not shown here.
+
+Hard rules:
+- Answer only from the clause text given. Never use outside knowledge, never guess, never invent a fact.
+- Cite every factual claim with [n], where n is the bracketed number of the clause it came from. A claim with no supporting clause below must not be made at all.
+- If the clauses below do not contain the answer, respond with exactly this and nothing else: ${NOT_FOUND_TOKEN}
+- Write your answer in the same language as the question.
+- Do not fabricate a clause reference. Only use [n] values that appear in the numbered list below.
+- Plain text only -- no JSON, no markdown formatting.
+
+Clauses:
+${renderRetrievedClauses(retrievedClauses)}`
+
+  return { system, user: question }
+}
+
+export function isNotFoundAnswer(text: string): boolean {
+  return text.trim() === NOT_FOUND_TOKEN
+}
+
+// Matches [1], [2], etc. -- returns the unique set of 1-indexed positions
+// cited, in first-seen order.
+export function extractCitationOrdinals(text: string): number[] {
+  const seen = new Set<number>()
+  const ordinals: number[] = []
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(match[1])
+    if (!seen.has(n)) {
+      seen.add(n)
+      ordinals.push(n)
+    }
+  }
+  return ordinals
+}
+
 export class MalformedAiResponseError extends Error {
   constructor(task: string, cause: unknown) {
     super(`Malformed AI response for task "${task}": ${cause instanceof Error ? cause.message : String(cause)}`)

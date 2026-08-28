@@ -99,3 +99,16 @@ html[dir="rtl"] body { line-height: var(--leading-arabic); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Citation jump target: a brass ring that fades out, so following a [n]
+   citation from chat to its source clause is visible even after the
+   scroll settles. Respects prefers-reduced-motion via the rule above --
+   animation-duration collapses to .01ms rather than needing a separate
+   reduced-motion variant. */
+@keyframes clause-flash {
+  from { box-shadow: 0 0 0 3px var(--brass); }
+  to { box-shadow: 0 0 0 3px transparent; }
+}
+.clause-flash {
+  animation: clause-flash 1.8s ease-out;
+}

@@ -120,6 +120,18 @@
       "termLength": "Term",
       "governingLaw": "Governing law",
       "totalValue": "Total value"
+    },
+    "chat": {
+      "title": "Ask about this contract",
+      "empty": "Ask a question and get an answer grounded in this contract, with clickable citations.",
+      "placeholder": "Ask a question…",
+      "send": "Send",
+      "notFound": "This isn't stated in the contract.",
+      "errors": {
+        "ai_disabled": "Chat isn't configured yet. Add an API key to enable it.",
+        "upstream_failed": "Something went wrong answering that. Try again.",
+        "unknown": "Something went wrong. Try again."
+      }
     }
   },
   "common": {

@@ -7,6 +7,7 @@ import { getCurrentOrgId } from '@/lib/org/current'
 import { parseDocument } from '@/lib/ingest/parse'
 import { segmentClauses } from '@/lib/ingest/segment'
 import { sha256Hex } from '@/lib/ingest/checksum'
+import { embedTexts, toPgVector } from '@/lib/ai/embed'
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -111,17 +112,35 @@ export async function ingestContract(
   }
 
   const clauses = segmentClauses(text)
-  const { error: clausesError } = await supabase.from('clauses').insert(
-    clauses.map((clause) => ({
-      version_id: version.id,
-      org_id: orgId,
-      ordinal: clause.ordinal,
-      clause_number: clause.clauseNumber,
-      lang: clause.lang,
-      body: clause.body,
-    })),
-  )
-  if (clausesError) return fail('unknown')
+  const { data: insertedClauses, error: clausesError } = await supabase
+    .from('clauses')
+    .insert(
+      clauses.map((clause) => ({
+        version_id: version.id,
+        org_id: orgId,
+        ordinal: clause.ordinal,
+        clause_number: clause.clauseNumber,
+        lang: clause.lang,
+        body: clause.body,
+      })),
+    )
+    .select('id, body')
+  if (clausesError || !insertedClauses) return fail('unknown')
+
+  // Chat retrieval needs embeddings, but a document is fully usable (read,
+  // analyze) without them -- so a failure here (no API key, rate limit)
+  // logs and moves on rather than failing the whole ingest. Chat on this
+  // contract will just find nothing to retrieve until it's re-embedded.
+  try {
+    const vectors = await embedTexts(insertedClauses.map((c) => c.body))
+    await Promise.all(
+      insertedClauses.map((clause, i) =>
+        supabase.from('clauses').update({ embedding: toPgVector(vectors[i]) }).eq('id', clause.id),
+      ),
+    )
+  } catch (err) {
+    console.error(`[ingestContract] embedding failed for contract ${contractId}:`, err instanceof Error ? err.message : err)
+  }
 
   await supabase.from('contracts').update({ status: 'ready' }).eq('id', contractId)
   revalidatePath('/contracts')

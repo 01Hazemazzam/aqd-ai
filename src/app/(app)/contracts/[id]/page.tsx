@@ -5,6 +5,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { ClauseRow } from '@/components/ui/clause-row'
 import { Card } from '@/components/ui/card'
 import { AnalyzeButton } from './analyze-button'
+import { ChatPanel } from './chat-panel'
 
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
 
@@ -152,6 +153,7 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
           {clauses.map((clause) => (
             <ClauseRow
               key={clause.id}
+              id={`clause-${clause.id}`}
               number={clause.clause_number ?? String(clause.ordinal)}
               heading={clause.clause_number ? t('clauseHeading', { number: clause.clause_number }) : t('untitledClause')}
               body={clause.body}
@@ -164,6 +166,12 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
 
       {contract.status === 'ready' && !clauses?.length && (
         <Card><p className="text-sm text-ink-dim">{t('empty')}</p></Card>
+      )}
+
+      {contract.status === 'ready' && !!clauses?.length && (
+        <div className="mt-6">
+          <ChatPanel contractId={id} />
+        </div>
       )}
     </main>
   )

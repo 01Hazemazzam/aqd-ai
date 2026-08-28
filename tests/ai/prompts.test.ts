@@ -1,6 +1,16 @@
 // tests/ai/prompts.test.ts
 import { describe, it, expect } from 'vitest'
-import { extractJson, MalformedAiResponseError, summaryPrompt, fieldsPrompt, risksPrompt, obligationsPrompt } from '@/lib/ai/prompts'
+import {
+  extractJson,
+  MalformedAiResponseError,
+  summaryPrompt,
+  fieldsPrompt,
+  risksPrompt,
+  obligationsPrompt,
+  chatPrompt,
+  isNotFoundAnswer,
+  extractCitationOrdinals,
+} from '@/lib/ai/prompts'
 
 describe('extractJson', () => {
   it('parses a plain JSON response', () => {
@@ -80,5 +90,58 @@ describe('prompt builders', () => {
     const clause = { id: 'c1', clauseNumber: '1', body: 'نص العقد' }
     expect(summaryPrompt([clause]).system.toLowerCase()).toContain('arabic')
     expect(summaryPrompt([clause]).user).not.toMatch(/\bclause\b/i)
+  })
+})
+
+describe('chatPrompt', () => {
+  it('numbers retrieved clauses 1..N in retrieval order, not by clause_number', () => {
+    const { system } = chatPrompt('When can this be terminated?', [
+      { clauseNumber: '7', lang: 'en', body: 'Termination text.' },
+      { clauseNumber: '2', lang: 'en', body: 'Some other clause.' },
+    ])
+    expect(system).toContain('[1]\nTermination text.')
+    expect(system).toContain('[2]\nSome other clause.')
+  })
+
+  it('instructs NOT_FOUND for a question the clauses cannot answer', () => {
+    const { system } = chatPrompt('q', [])
+    expect(system).toContain('NOT_FOUND')
+  })
+
+  it('passes the raw question through as the user turn', () => {
+    const { user } = chatPrompt('What is the governing law?', [])
+    expect(user).toBe('What is the governing law?')
+  })
+})
+
+describe('isNotFoundAnswer', () => {
+  it('matches an exact NOT_FOUND response', () => {
+    expect(isNotFoundAnswer('NOT_FOUND')).toBe(true)
+  })
+
+  it('matches with surrounding whitespace', () => {
+    expect(isNotFoundAnswer('  NOT_FOUND\n')).toBe(true)
+  })
+
+  it('does not match a real answer that happens to mention the word', () => {
+    expect(isNotFoundAnswer('The document states the value is NOT_FOUND anywhere else.')).toBe(false)
+  })
+
+  it('does not match a normal answer', () => {
+    expect(isNotFoundAnswer('The governing law is Kuwait [1].')).toBe(false)
+  })
+})
+
+describe('extractCitationOrdinals', () => {
+  it('extracts citation numbers in first-seen order', () => {
+    expect(extractCitationOrdinals('See [3] and [1], also [3] again.')).toEqual([3, 1])
+  })
+
+  it('returns an empty array when there are no citations', () => {
+    expect(extractCitationOrdinals('No citations here.')).toEqual([])
+  })
+
+  it('deduplicates repeated citations', () => {
+    expect(extractCitationOrdinals('[2] [2] [2]')).toEqual([2])
   })
 })

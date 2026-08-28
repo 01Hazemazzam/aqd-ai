@@ -205,3 +205,73 @@ export async function aiComplete(
   }
   throw lastError
 }
+
+export interface StreamChunk {
+  textDelta: string
+}
+
+// Chat streaming is Gemini-only for now -- Anthropic's SSE event shape
+// (message_start/content_block_delta/...) is different enough from
+// Gemini's that supporting it isn't a small extension of this function, and
+// Anthropic is untested in this app entirely (no key has ever been
+// configured). Throws loudly rather than silently mishandling a tier that
+// resolves to Anthropic.
+export async function* streamGeminiText(
+  tier: Tier,
+  systemPrompt: string,
+  userPrompt: string,
+  opts?: { fetchImpl?: typeof fetch },
+): AsyncGenerator<StreamChunk> {
+  const spec = TIERS[tier]
+  if (spec.provider !== 'gemini') {
+    throw new AiUpstreamError(`Streaming is only implemented for Gemini, tier "${tier}" resolves to "${spec.provider}"`, false)
+  }
+  const apiKey = apiKeyFor('gemini')
+  if (!apiKey) throw new AiDisabledError('No API key configured for provider "gemini"')
+
+  const fetchImpl = opts?.fetchImpl ?? fetch
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:streamGenerateContent?alt=sse`
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    }),
+  })
+
+  if (!response.ok || !response.body) {
+    const retryable = response.status === 429 || response.status >= 500
+    throw new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    // Gemini's SSE stream uses CRLF line endings, not bare LF -- normalize
+    // before splitting, or "\n\n" never matches and every frame silently
+    // buffers forever without yielding a single chunk.
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+
+    // SSE frames are separated by a blank line; each frame's payload line
+    // starts with "data: ". Buffer across chunk boundaries since a frame
+    // can arrive split across multiple reads.
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() ?? ''
+    for (const frame of frames) {
+      const line = frame.split('\n').find((l) => l.startsWith('data:'))
+      if (!line) continue
+      const payload = line.slice(5).trim()
+      if (!payload || payload === '[DONE]') continue
+      const parsed = JSON.parse(payload)
+      const text = (parsed.candidates?.[0]?.content?.parts ?? [])
+        .map((part: { text?: string }) => part.text ?? '')
+        .join('')
+      if (text) yield { textDelta: text }
+    }
+  }
+}
