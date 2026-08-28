@@ -45,6 +45,12 @@
       "confirm": "Set new password",
       "done": "Password changed. All trusted devices were signed out."
     },
+    "brand": {
+      "tagline": "Read every clause. Miss nothing.",
+      "feature1": "Risk scored, clause by clause",
+      "feature2": "Answers locked to your contract",
+      "feature3": "Arabic-first, fully bilingual"
+    },
     "errors": {
       "invalidCredentials": "That email and password combination isn't right.",
       "invalidEmail": "Enter a valid email address.",
@@ -63,6 +69,10 @@
     "inviteTitle": "You've been invited",
     "inviteBody": "{org} invited you to join as {role}.",
     "acceptInvite": "Accept invitation"
+  },
+  "dashboard": {
+    "welcome": "You're in.",
+    "subtitle": "Contract upload and analysis are on their way in the next milestone. Your organization is set up and ready."
   },
   "common": {
     "appName": "Aqd AI",
