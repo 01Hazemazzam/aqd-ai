@@ -6,7 +6,7 @@ This is a from-scratch rebuild, planned and built through a spec → design → 
 
 ## Status
 
-**Sub-projects 1 and 2 of 5 are complete.** Foundation & Identity ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. Document pipeline & reader adds direct-to-Storage upload, PDF/DOCX parsing, regex-based AR/EN clause segmentation, and a clause-by-clause reader — no AI yet, that's sub-project 3.
+**Sub-projects 1 through 3 of 5 are built.** Foundation & Identity ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. Document pipeline & reader adds direct-to-Storage upload, PDF/DOCX parsing, regex-based AR/EN clause segmentation, and a clause-by-clause reader. Analysis adds an AI layer — summary, key-field extraction, playbook-based risk scoring, and an obligations list — but **no API key is configured in this environment**, so the live behavior right now is the deliberate `ai_disabled` path: click Analyze, get a clear "not configured" message, nothing crashes. Add `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY` to `.env.local` to turn it on.
 
 Full roadmap and the reasoning behind the five-way split: [`docs/superpowers/specs/2026-08-27-foundation-identity-design.md`](docs/superpowers/specs/2026-08-27-foundation-identity-design.md).
 
@@ -14,7 +14,7 @@ Full roadmap and the reasoning behind the five-way split: [`docs/superpowers/spe
 |---|---|---|
 | 1 | **Foundation & Identity** | ✅ Complete — see below |
 | 2 | **Document pipeline & reader** | ✅ Complete — see below |
-| 3 | Analysis | Not started |
+| 3 | **Analysis** | ✅ Built — see below (untested against a real model; no API key configured) |
 | 4 | Citation-locked chat | Not started |
 | 5 | Product helper assistant & polish | Not started |
 
@@ -36,6 +36,14 @@ After all 20 tasks passed review, a user-directed design pass filled in what the
 ### Sub-project 2 progress
 
 `supabase/migrations/0008`–`0010` add `contracts`/`contract_files`/`contract_versions`/`clauses` under the same org-scoped RLS pattern as sub-project 1, plus a private `contracts` Storage bucket whose object policies trust only the `org_id` folder segment in the path (`{org_id}/{contract_id}/{filename}`), checked against the caller's own JWT. Upload is client → Storage direct via a signed upload URL (`createSignedUploadUrl`/`uploadToSignedUrl`), the same body-limit-avoidance pattern the original spec called out. `src/lib/ingest/parse.ts` (unpdf for PDF, mammoth for DOCX) extracts raw text; `src/lib/ingest/segment.ts` splits it into clauses via ordered regex heading patterns — `المادة`/`البند`, `Article`/`Section`/`Clause`, and bare `1.`/`1.1)` numbering, each in Western or Arabic-Indic digits — with a paragraph-break fallback for unnumbered documents, and per-clause language detection (Arabic-block character count vs. Latin) so one English clause inside an otherwise-Arabic contract renders LTR while the rest stays RTL. Checksum-based dedup (`contract_files.checksum_sha256`, hex text rather than `bytea` — queried directly from `supabase-js` for the dedup lookup, unlike `code_hash`/`device_hash`, which only ever go through security-definer SQL) means re-uploading identical bytes reuses the existing file row instead of re-parsing. `tests/ingest/pipeline.test.ts` exercises the real thing end to end — sign up, create an org, request a signed URL, upload real file bytes to the real local Storage API, download them back, parse, segment, and insert clauses under RLS — against a hand-built bilingual DOCX fixture (`tests/fixtures/`) and a hand-built PDF, not mocks.
+
+### Sub-project 3 progress
+
+`supabase/migrations/0011` adds `playbooks`/`playbook_rules` (global, read-only content — no `org_id`, RLS is "any authenticated user" rather than the tenant `jwt_org_id()` pattern, since a legal rulebook isn't a tenant's data) seeded with an 8-rule default playbook, plus `analyses`/`risk_findings`/`usage_events` under the normal org-scoped RLS. `src/lib/ai/router.ts` calls Anthropic and Gemini directly — no OpenRouter, per the locked stack decision — with three env-overridable model tiers, retry with backoff on retryable failures only, and a cost estimate logged to `usage_events` per call. `src/lib/ai/prompts.ts` holds the four task prompts (summary, fields, risks, obligations); every response is parsed independently in `contracts/[id]/analyze-actions.ts` so one malformed JSON blob doesn't take the other three down, and results are cached by `(org_id, content_hash)` the same way sub-project 2 dedupes file bytes — re-analyzing an unchanged contract is a cache hit. Risk findings surface as severity markers in the clause reader's gutter (the `ClauseRow` component already had a `severity` prop from the sub-project 1 design pass, unused until now).
+
+**No `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is set in this environment**, so the only AI behavior actually exercised live is the `AiDisabledError` path — confirmed in the browser: click Analyze, get "AI analysis isn't configured yet," `analyses.status` correctly lands on `failed`/`ai_disabled`. The router's HTTP-layer logic (retry, truncation/safety-block detection, cost calculation) is covered by `tests/ai/router.test.ts` against mocked responses shaped like real Anthropic/Gemini payloads; the schema and RLS are proven against real local Postgres in `tests/ai/schema-integration.test.ts`. **None of it has been run against a real model.** The prompts, JSON-shape contracts, and playbook rule wording are all unverified against actual model output — that's the first thing to check once a key is added, before trusting any analysis result.
+
+**A note on Gemini's failure shape:** like OpenRouter's "HTTP 200 with an error body" gotcha the original spec called out, Gemini's API has its own version of "200 OK doesn't mean a usable response" — a safety-blocked prompt returns 200 with `promptFeedback.blockReason` and no `candidates` array at all, and truncation shows up as `finishReason: "MAX_TOKENS"` rather than an HTTP error. `callGemini` checks for both explicitly and treats them as non-retryable (retrying a blocked or truncated response just wastes another call for the same result).
 
 ## What's built so far
 
@@ -94,7 +102,7 @@ npx supabase start   # requires Docker Desktop running
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and fill in the values `npx supabase start` prints (adjusting for the port remap above if you're on Windows and hit the same exclusion issue).
+Copy `.env.example` to `.env.local` and fill in the values `npx supabase start` prints (adjusting for the port remap above if you're on Windows and hit the same exclusion issue). `ANTHROPIC_API_KEY`/`GEMINI_API_KEY` are optional — leave them blank to run with AI analysis off (the `ai_disabled` path, see Sub-project 3 progress above), or set one or both to enable it. `RESEND_API_KEY` is optional too, and for the same reason: see **Getting unstuck locally** above.
 
 With `RESEND_API_KEY` left blank, no email is ever sent — signing up or triggering a device challenge shows the code directly on the page instead (see **Getting unstuck locally** above). If you land on `/verify` or `/challenge` for an account that isn't yours, use the "Not you?" link rather than clearing cookies by hand.
 
