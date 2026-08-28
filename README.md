@@ -6,13 +6,13 @@ This is a from-scratch rebuild, planned and built through a spec → design → 
 
 ## Status
 
-**Sub-project 1 of 5 — Foundation & Identity — is in progress.** This sub-project ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. It does not yet include contract upload, AI analysis, or chat — those are sub-projects 2–4.
+**Sub-project 1 of 5 — Foundation & Identity — is complete.** This sub-project ships the design system, the multi-tenant Supabase foundation, and the complete email-and-password authentication surface including device-trust two-factor. It does not yet include contract upload, AI analysis, or chat — those are sub-projects 2–4.
 
 Full roadmap and the reasoning behind the five-way split: [`docs/superpowers/specs/2026-08-27-foundation-identity-design.md`](docs/superpowers/specs/2026-08-27-foundation-identity-design.md).
 
 | # | Sub-project | Status |
 |---|---|---|
-| 1 | **Foundation & Identity** | 🚧 In progress — see below |
+| 1 | **Foundation & Identity** | ✅ Complete — see below |
 | 2 | Document pipeline & reader | Not started |
 | 3 | Analysis | Not started |
 | 4 | Citation-locked chat | Not started |
@@ -25,21 +25,32 @@ Twenty tasks, built and reviewed one at a time via `superpowers:subagent-driven-
 | Lane | Tasks | Status |
 |---|---|---|
 | A — Frontend foundation | 1–5: scaffold, OKLCH design tokens (light + dark), UI kit, i18n/RTL | ✅ Done |
-| B — Database foundation | 6–12: Supabase schema, JWT org claims, identity tables, org lifecycle, code lifecycle, device trust, cross-tenant isolation proof | 🚧 In progress (through Task 11) |
-| C/D — Auth screens | 15–18: signup/verify, reset, login/challenge, onboarding | Not started |
-| — | 19–20: end-to-end journeys, visual/a11y/token audits | Not started |
+| B — Database foundation | 6–12: Supabase schema, JWT org claims, identity tables, org lifecycle, code lifecycle, device trust, cross-tenant isolation proof | ✅ Done |
+| C/D — Auth screens | 13–18: Supabase clients, auth module, signup/verify, reset, login/challenge, onboarding | ✅ Done |
+| — | 19–20: end-to-end journeys, visual/a11y/token audits | ✅ Done |
 
-Lanes A and B were built concurrently in separate agents once both were unblocked, since they touch disjoint files.
+Lanes A and B were built concurrently in separate agents once both were unblocked, since they touch disjoint files; Lanes C and D (signup/verify vs. login/challenge) were likewise built concurrently once the shared auth module landed.
+
+After all 20 tasks passed review, a user-directed design pass filled in what the plan had deliberately left thin (a real branded panel instead of an empty rectangle, a working dashboard placeholder, a distinct wordmark treatment) and, in the course of that work, caught and fixed a real latent bug: `font-serif`/`font-sans` had never actually been wired to the fonts loaded in `layout.tsx`, so every screen had been silently rendering system-default fonts since Task 2. See **What's built so far** below for what that pass changed.
 
 ## What's built so far
 
-**Design system** (`src/app/globals.css`, `src/components/ui/`) — twelve OKLCH colour tokens, each defined once for light and once for dark, mapped into Tailwind v4 through a `@theme inline` block. Newsreader/Amiri for display type, Inter/IBM Plex Sans Arabic for UI, with Arabic body copy set at a deliberately looser line-height (1.9 vs Latin's 1.7). The kit: Button, Input, Card, Badge, Spinner, the six-box verification code input, risk severity pills (glyph *and* word, never colour alone), Tabs, and the clause row with a logical-CSS margin gutter that mirrors automatically in RTL.
+**Design system** (`src/app/globals.css`, `src/components/ui/`) — twelve OKLCH colour tokens, each defined once for light and once for dark, mapped into Tailwind v4 through a `@theme inline` block. Three font tokens follow the same pattern: `--font-sans`/`--font-serif`/`--font-wordmark`, Latin by default (Inter / Newsreader / Fraunces) and swapped to their Arabic counterparts (IBM Plex Sans Arabic / Amiri / Aref Ruqaa) under `html[dir="rtl"]`, so every `font-serif`/`font-sans`/`font-wordmark` utility resolves correctly in both directions with no per-component logic. The wordmark ("Aqd"/"عقد") gets the more characterful `font-wordmark` face specifically so the brand mark reads as a mark, not just a headline — everything else stays on the body/display pair. The kit: Button, Input, Card, Badge, Spinner, the six-box verification code input, risk severity pills (glyph *and* word, never colour alone), Tabs, and the clause row with a logical-CSS margin gutter that mirrors automatically in RTL. `AuthShell` pairs every auth screen's form with a `BrandPanel` — a line-art SVG illustration, an editorial tagline, and a feature list over a soft `color-mix()` gradient built entirely from existing tokens.
 
 **Internationalisation** (`src/lib/i18n/`, `messages/`) — locale by cookie, `next-intl`, full English and Arabic message catalogs with parity enforced by a test that walks both files' key sets.
 
-**Multi-tenant schema** (`supabase/migrations/0001`–`0006`) — `organizations`/`org_members`/`invites` under Row-Level Security; a custom JWT hook that stamps `org_id`/`org_role` at token mint with a membership-table fallback for tokens minted before a user joined an org; `login_codes`/`trusted_devices`/`rate_limits`/`auth_events` for the identity layer; `create_organization()`/`accept_invite()` as the only two operations authorised to cross the tenancy boundary; a row-locked `issue_code()`/`verify_code()` pair implementing 6-digit codes with 10-minute expiry, 5-attempt burn, and purpose isolation (a signup code can't be replayed as a device challenge); `trust_device()`/`is_device_trusted()`/`revoke_all_devices()` for "remember this device for 30 days".
+**Multi-tenant schema** (`supabase/migrations/0001`–`0006`) — `organizations`/`org_members`/`invites` under Row-Level Security; a custom JWT hook that stamps `org_id`/`org_role` at token mint with a membership-table fallback for tokens minted before a user joined an org; `login_codes`/`trusted_devices`/`rate_limits`/`auth_events` for the identity layer; `create_organization()`/`accept_invite()` as the only two operations authorised to cross the tenancy boundary; a row-locked `issue_code()`/`verify_code()` pair implementing 6-digit codes with 10-minute expiry, 5-attempt burn, and purpose isolation (a signup code can't be replayed as a device challenge); `trust_device()`/`is_device_trusted()`/`revoke_all_devices()` for "remember this device for 30 days". `tests/db/isolation.test.ts` proves two different users/orgs are fully invisible to each other at the database level — the sub-project's exit test.
 
 **The load-bearing rule, same as the reference chatbot this plan borrowed patterns from:** server code always uses the caller's own session client, never a service-role key. RLS enforces tenancy at the database, not in application code.
+
+**The full auth surface** (`src/app/(auth)/`, `src/lib/auth/`, `src/middleware.ts`) — signup, email verification, login, new-device challenge, password reset (which revokes every trusted device on a successful reset), and onboarding (organisation creation), plus `requireSession()`/`requireVerified()` guarding the protected `(app)` route group and a session-refresh middleware. Every credential failure (wrong password, unconfirmed email, unknown account) collapses to one indistinguishable error code, so the login form can't be used to enumerate registered emails. Covered end-to-end by Playwright (`e2e/auth.spec.ts`) against the real local Supabase stack, plus a token-discipline audit (`tests/token-audit.test.ts`, zero colour literals or physical-direction utilities outside `globals.css`) and an accessibility/visual-regression suite (`e2e/a11y.spec.ts`, `e2e/visual.spec.ts` — axe-core WCAG2A/AA and 12 screenshot baselines across 3 screens × 2 themes × 2 locales).
+
+### Two tracked, deliberately-deferred items
+
+Neither blocks `npm test`, `npm run dev`, or `npm run e2e` — both are real, both are known, neither was silently dropped:
+
+- **`npm run build` currently fails.** `src/app/(auth)/verify/page.tsx` passes `resendCode` (which returns a value) as a bare `<form action={...}>` outside `useActionState`, which requires a `void`-returning function. This is the plan's own verbatim code, isolated to one file, and doesn't cascade — but it must be fixed before any real deploy. Trivial fix: wrap the resend form in its own `useActionState`, or `action={() => { void resendCode() }}`.
+- **One visual-regression baseline has a cosmetic blemish.** `e2e/visual.spec.ts-snapshots/signup-light-en-*.png` has Next's dev-mode "N" indicator caught mid-toast-animation. It's a dev-server-only overlay (doesn't exist in production builds) — two independent attempts to regenerate it cleanly (a pre-warmed server, and `devIndicators: false`) both still caught it, pointing to a timing race between Playwright's screenshot and the indicator's client-side hydration rather than a real defect. Would likely resolve itself by running visual regression against a production build instead of `next dev` — not viable until the `npm run build` item above is fixed first.
 
 ## Security model — read this before touching auth or schema
 
@@ -48,13 +59,17 @@ Lanes A and B were built concurrently in separate agents once both were unblocke
 - **The code-verification race is closed with `FOR UPDATE`.** Two simultaneous verification attempts against one code lock the row; exactly one can succeed. Proven by a real concurrent-connection test, not asserted.
 - **Every stored secret is hashed, never plaintext**: invite tokens (`token_hash`), login codes (`code_hash`), device identifiers (`device_hash`, salted per-user via `device_digest()`).
 - **Helper functions that mutate shared state need their own privilege review, independent of their siblings.** `bump_rate_limit()` was found, mid-build, to have no `revoke`/`grant` block at all — Postgres's default left it callable by any client. The obvious fix (match the sibling pattern: revoke from `public`, grant to `authenticated`) turned out to be *incomplete*: Supabase grants `EXECUTE` to `anon` and `authenticated` separately from `PUBLIC` by default on every new function in `public`, and revoking from `PUBLIC` doesn't touch that. The real fix was revoking from `public, anon, authenticated` entirely — since `issue_code()`/`verify_code()` call `bump_rate_limit()` internally as `security definer` functions running under their own owner's privileges, they never needed a direct grant in the first place. Lesson: a function with no internal auth check is only as safe as its grants, and "matches its siblings" isn't proof those siblings' pattern was actually sufficient.
+- **...but that residual grant isn't automatically dangerous.** `trust_device()`/`is_device_trusted()`/`revoke_all_devices()` carry the exact same residual `anon`/`authenticated` EXECUTE (Supabase's default-ACL-on-create, not something `revoke ... from public` can touch). Confirmed safe by direct testing — calling all three as `anon` with no JWT `sub` set either raises `not_authenticated` or returns `false`. The difference from `bump_rate_limit` is structural: none of the three take a caller-supplied subject, every WHERE clause and INSERT derives its target row from the caller's own `sub`. A residual grant is only a problem when a function trusts a caller-supplied identity instead of the caller's own.
+- **The IP-based rate limit (`issue_code_ip`, 5/hour) is real and will bite repeated local testing.** Running the signup flow (or `e2e/auth.spec.ts`) several times in one hour from one machine will exhaust it — `issueAndSendCode` then legitimately returns `rate_limited` rather than a code. That's the limiter working, not a bug. To reset locally: `delete from public.rate_limits where action in ('issue_code','issue_code_ip')` against the local DB.
 
 ## Local development quirks worth knowing
 
-Two non-obvious things were discovered building this, on this machine:
+Four non-obvious things were discovered building this, on this machine:
 
 1. **Supabase's default local ports may not be usable on Windows.** Windows/Hyper-V's WSL2 NAT reserves large, dynamic TCP port-exclusion ranges, and Supabase's entire default range (`54320`–`54329`) fell inside one on this machine — every port bind failed with "forbidden by its access permissions", not a real conflict with anything else running. `supabase/config.toml` here remaps every Supabase port by `+1000` into the clear `553xx` range (API `55321`, DB `55322`, Studio `55323`, etc.). If you hit the same error, check `netsh interface ipv4 show excludedportrange protocol=tcp` before assuming it's a port conflict with another process.
 2. **`pgcrypto` lives in the `extensions` schema on this Supabase stack, not `public`.** Any `security definer` function that pins `set search_path = public` (the norm for this project, to stop a caller shadow-injecting objects) cannot resolve a bare `digest(...)` call — it must be qualified as `extensions.digest(...)`. A plain session-level query doesn't need this, since Supabase's default connection `search_path` already includes `extensions`; it only bites inside a function that has explicitly pinned its own path.
+3. **Playwright's config does not auto-load `.env.local`.** Unlike Next's own dev server and Vitest's `tests/setup.ts`, `playwright.config.ts` needs its own `process.loadEnvFile('.env.local')` or any DB-reading e2e test silently falls back to Supabase's stock port instead of this stack's remapped one.
+4. **Port 3000 is not exclusively this project's.** If another local project is already listening on 3000 when `npm run e2e` starts, Playwright's `reuseExistingServer: true` will silently reuse the *wrong app* instead of failing — every test result would be nonsense, not a clean error. `playwright.config.ts` here is remapped to port 3002 for that reason; check `netstat -ano | grep ":3002 "` before assuming a stale process is yours to kill.
 
 ## Tech stack
 
