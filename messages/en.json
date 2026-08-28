@@ -75,7 +75,32 @@
   },
   "dashboard": {
     "welcome": "You're in.",
-    "subtitle": "Contract upload and analysis are on their way in the next milestone. Your organization is set up and ready."
+    "subtitle": "Your organization is set up and ready.",
+    "viewContracts": "View contracts"
+  },
+  "contracts": {
+    "title": "Contracts",
+    "uploadCta": "Upload contract",
+    "uploading": "Uploading…",
+    "processing": "Processing…",
+    "empty": "No contracts yet. Upload a PDF or DOCX to get started.",
+    "backToList": "Back to contracts",
+    "clauseHeading": "Clause {number}",
+    "untitledClause": "Clause",
+    "parseFailed": "We couldn't process this document. Try uploading it again.",
+    "status": {
+      "uploaded": "Uploaded",
+      "parsing": "Processing",
+      "ready": "Ready",
+      "failed": "Failed"
+    },
+    "errors": {
+      "unsupported_type": "Only PDF and DOCX files are supported.",
+      "file_too_large": "That file is too large (50MB max).",
+      "download_failed": "We couldn't read the uploaded file. Try again.",
+      "parse_failed": "We couldn't extract text from this document.",
+      "unknown": "Something went wrong. Please try again."
+    }
   },
   "common": {
     "appName": "Aqd",

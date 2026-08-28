@@ -75,7 +75,32 @@
   },
   "dashboard": {
     "welcome": "أهلاً بك.",
-    "subtitle": "رفع العقود وتحليلها قادمان في المرحلة القادمة. مؤسستك جاهزة الآن."
+    "subtitle": "مؤسستك جاهزة الآن.",
+    "viewContracts": "عرض العقود"
+  },
+  "contracts": {
+    "title": "العقود",
+    "uploadCta": "رفع عقد",
+    "uploading": "جارٍ الرفع…",
+    "processing": "جارٍ المعالجة…",
+    "empty": "لا توجد عقود بعد. ارفع ملف PDF أو DOCX للبدء.",
+    "backToList": "العودة إلى العقود",
+    "clauseHeading": "البند {number}",
+    "untitledClause": "بند",
+    "parseFailed": "تعذّرت معالجة هذا المستند. حاول رفعه مرة أخرى.",
+    "status": {
+      "uploaded": "تم الرفع",
+      "parsing": "قيد المعالجة",
+      "ready": "جاهز",
+      "failed": "فشل"
+    },
+    "errors": {
+      "unsupported_type": "يُدعم فقط ملفات PDF وDOCX.",
+      "file_too_large": "الملف كبير جداً (الحد الأقصى ٥٠ ميغابايت).",
+      "download_failed": "تعذّرت قراءة الملف المرفوع. حاول مرة أخرى.",
+      "parse_failed": "تعذّر استخراج النص من هذا المستند.",
+      "unknown": "حدث خطأ ما. حاول مرة أخرى."
+    }
   },
   "common": {
     "appName": "عقد",

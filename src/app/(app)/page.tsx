@@ -1,5 +1,7 @@
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { SettingsToggles } from '@/components/settings-toggles'
 
 export default function DashboardPage() {
@@ -21,7 +23,12 @@ export default function DashboardPage() {
         >
           ✎
         </span>
-        <p className="text-sm leading-relaxed text-ink-dim">{d('subtitle')}</p>
+        <div className="flex-1">
+          <p className="text-sm leading-relaxed text-ink-dim">{d('subtitle')}</p>
+          <Link href="/contracts" className="mt-4 inline-block">
+            <Button type="button" variant="secondary">{d('viewContracts')}</Button>
+          </Link>
+        </div>
       </Card>
     </main>
   )
