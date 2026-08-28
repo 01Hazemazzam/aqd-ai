@@ -1,4 +1,4 @@
-# Sub-project 3 — running quality findings log
+# Sub-project 3 & 4 — running quality findings log
 
 Maintained against the reviewer checklist given for this validation. Updated as testing
 continues; entries are not removed when fixed, only marked so the history of what broke stays
@@ -162,6 +162,82 @@ this validation. Anyone repeating this evaluation should record the resolved mod
 
 ---
 
+## Sub-project 4 — citation-locked chat
+
+### Citation accuracy / no ambiguity
+🟢 **Verified live.** Citation ordinals are assigned by *retrieval order* (`renderRetrievedClauses`
+numbers matched clauses 1..N), never the document's own `clause_number` — so a `[1]` in the
+model's answer always maps unambiguously to "the first clause `match_clauses` returned for this
+question," not to a document-relative number the model could misremember. `route.ts` also
+independently filters any citation ordinal the model emits down to the actual 1..N retrieved-set
+range before persisting — a hallucinated `[7]` when only 3 clauses were retrieved is dropped, not
+trusted. Live click-through confirmed: `[1]` in a real streamed answer scrolled to and flashed
+exactly the clause it was grounded in.
+
+### NOT_FOUND discipline
+🟢 **Verified live.** A question with no supporting clause in the fixture (termination terms,
+which Contract A's fixture deliberately omits) correctly returned the exact NOT_FOUND sentinel,
+rendered client-side as the localized "not stated in the contract" message — not a guess, not a
+generic refusal. Retrieval-level short-circuit also confirmed in code: zero `match_clauses` rows
+skips the model call entirely and returns NOT_FOUND without spending a generation call.
+
+### Provider resilience (streaming-specific)
+🟡 **Partially verified.** Real 200 responses with real token streaming confirmed live on the
+`cheap`-tier override (see Model tier coverage below). Mid-stream failure modes (connection drop
+after some tokens already sent, a safety block arriving as a stream event rather than upfront)
+are not live-forced — same limitation already logged for non-streaming calls in Sub-project 3's
+Provider resilience entry. `streamGeminiText` throws loudly (not silently) if a tier resolves to
+Anthropic, since Anthropic's SSE shape isn't implemented — this is a deliberate scope boundary,
+not a bug, and is unit-tested.
+
+### Output consistency (streaming/chat-specific)
+⚪ Not independently re-tested for chat beyond the general non-determinism already documented for
+generation calls in Sub-project 3 — no chat-specific consistency issue observed, but sample size
+is small (one fixture, one question set, single live pass per question).
+
+### Security / RLS (chat-specific)
+🟢 Verified via real two-org Postgres test (`tests/chat/schema-integration.test.ts`, no API key
+required for this half): `chats`/`chat_messages`/`citations` all correctly invisible cross-org,
+the one-chat-per-contract uniqueness constraint enforced, RLS rejects cross-org access at the
+database layer. `match_clauses()` is a plain SQL function (not `security definer`), so it inherits
+the caller's session and the existing `clauses` RLS automatically — confirmed live: the same
+query against the same contract returns real ranked matches for the owning org and zero rows for
+a different org.
+
+### Two real bugs found (both fixed, both regression-tested)
+🟢 **CRLF SSE framing.** `streamGenerateContent?alt=sse` sends `\r\n\r\n` frame separators, not
+bare `\n\n`. The request succeeded (200, real `usageMetadata` logged) but the frame-splitting
+`buffer.split('\n\n')` never matched a single frame, so zero token chunks were ever yielded —
+a silent failure, not a thrown error, found only by inspecting the raw stream bytes directly
+(`text.includes('\r\n')`). Fixed with a `.replace(/\r\n/g, '\n')` normalization pass before
+buffering. Regression-tested in `tests/ai/router.test.ts`: exact-CRLF case, bare-LF fallback case
+(so a provider that *doesn't* use CRLF still works), and a frame deliberately split across
+multiple `read()` calls.
+🟢 **i18n namespace mismatch.** `useTranslations('contracts.chat')` (two-level dot-path) silently
+failed to resolve every key in the chat panel, throwing `MISSING_MESSAGE` at render time. Every
+other component in this codebase uses the one-level-namespace-plus-nested-key form
+(`useTranslations('contracts')` + `t('errors.xxx')`); the chat panel was the one place that broke
+the established pattern. Fixed by matching it. No regression test added (this is a
+component-render-time i18n key lookup, not unit-testable without a full render harness this
+codebase doesn't otherwise use) — flagged here instead as a "match the existing pattern" note for
+anyone adding the next `useTranslations` call.
+
+### Model tier coverage (chat-specific — same caveat as Sub-project 3)
+🔴 **Known validation gap, not a claim of full coverage.** All live chat verification (streaming,
+citation click-through, NOT_FOUND) was performed with a temporary `AI_MODEL_MAIN` override to the
+`cheap`-tier alias (`gemini-flash-lite-latest`), the same free-tier-quota workaround used
+throughout Sub-project 3's round 1, because the `main`-tier model was already quota-exhausted at
+the time. The intended production `main` tier's chat behavior (streaming shape, citation quality,
+NOT_FOUND discipline under the actual production model) has **not** been independently verified.
+`heavy` tier (Anthropic) is out of scope for chat entirely — `streamGeminiText` explicitly throws
+if a tier resolves to a non-Gemini provider, since no Anthropic streaming implementation exists
+and no Anthropic key has ever been configured in this environment. Embedding generation
+(`embed.ts`, `gemini-embedding-001`) was exercised on whatever tier/quota was live at the time and
+is model-fixed (not tier-selectable), so this gap is specific to the *generation* step of chat,
+not retrieval.
+
+---
+
 ## Regression tests added (locking in fixes found during this validation)
 
 - `tests/ai/prompts.test.ts` — stray-backslash JSON repair (exact failure shape)
@@ -176,6 +252,13 @@ this validation. Anyone repeating this evaluation should record the resolved mod
   requested alias
 - `tests/ai/schema-integration.test.ts` — real-Postgres RLS isolation (pre-existing, still
   covers the new analyses/risk_findings/usage_events tables)
+- `tests/ai/router.test.ts` — SSE CRLF frame format, bare-LF fallback, and a frame split across
+  multiple stream reads
+- `tests/ai/embed.test.ts` — pgvector string formatting, batching >100 texts into multiple calls,
+  retry-then-succeed, and the disabled/empty-input short-circuits
+- `tests/chat/schema-integration.test.ts` — real-embeddings semantic ranking via `match_clauses`,
+  cross-org invisibility of matches, and RLS for chats/chat_messages/citations (create/read/insert,
+  one-chat-per-contract, cross-org isolation)
 
 Not regression-tested (impractical without live-model calls each run): the live model-quality
 findings themselves (false-positive rate, extraction accuracy, Arabic fluency). These are the
