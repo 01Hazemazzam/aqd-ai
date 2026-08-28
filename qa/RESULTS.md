@@ -122,44 +122,82 @@ another org's `analyses` is rejected by RLS, not application logic.
 6. `src/app/(app)/contracts/[id]/analyze-actions.ts` — `runTask`'s silent `catch {}` now logs the
    real failure reason (this bug is why finding #2 above took real effort to diagnose).
 
+## Round 2 follow-up validation (2026-08-29, quota reset)
+
+Requested follow-ups, run for real once the free-tier quota reset:
+
+1. **Fixture B (Arabic) risk-scoping fix — re-verified live, full production path.** Fresh run
+   returns exactly the 2 ground-truth findings (`governing_law`, `dispute_resolution`), zero
+   false positives. The `indemnification_balance` false positive from round 1 did not recur.
+   The borderline `unlimited_liability` finding (round 1's defensible "one-sided cap" reading)
+   did **not** fire on this repeat run — see Output consistency in `qa/FINDINGS.md`.
+2. **`main`-tier model (`gemini-flash-latest`) — still exhausted, confirmed independently.**
+   Checked directly (not through the app) a full calendar day after round 1's smoke tests: still
+   `429 RESOURCE_EXHAUSTED` for `gemini-3.7-flash`. This is now itself a finding: either the
+   quota reset window is longer than 24h, the actual per-model cap is stricter than the
+   documented 20/day for this account, or there's an account-level throttle beyond the
+   documented limit. **Not resolved — needs the user to check https://ai.dev/rate-limit directly
+   or use a paid tier.** All of round 2's live verification below ran on the `cheap` tier's model
+   (temporarily pointed at by `AI_MODEL_MAIN` for the duration of the test, then reverted) —
+   `main` itself remains unexercised beyond the original 1 successful `summary` call from round 1.
+3. **7-risk malformed-JSON regression — re-confirmed fixed, 3rd independent run.** Fresh
+   Contract A run, cleared and regenerated from scratch: all 7 risk findings persisted, zero
+   UUID leakage in the summary.
+4. **Arabic digit-rendering glitch — did not reproduce.** Fresh run of Fixture C's summary
+   rendered the same fact correctly ("30 يوماً"). Treating as an intermittent, non-systemic
+   generation artifact rather than a bug to fix — logged for a third data point if it recurs.
+5. **Model alias reproducibility — fixed and verified.** `usage_events.model` previously recorded
+   the *requested* alias (`gemini-flash-lite-latest`), not what actually served the call. Both
+   `callAnthropic`/`callGemini` now prefer the response's own resolved-model field. Verified
+   live: round-2 rows show `gemini-3.5-flash-lite` (the concrete snapshot the alias resolved to),
+   not the alias. **Policy:** keep the rolling alias as the code default — a pinned version is
+   what caused the original 404-on-retirement bug this validation found on day 1 — and rely on
+   this per-call capture for after-the-fact traceability instead.
+
+Full category-by-category findings, including what's still 🔴/🟡 vs 🟢, live in `qa/FINDINGS.md`
+and are maintained going forward, not just at validation time.
+
 ## Remaining risks / not yet verified
 
-- **Fixture B's risk-scoping fix was not re-verified against a full live re-run** (quota
-  exhausted) — only verified on Fixture C, same rule class, same fix, same code path.
-- **`gemini-flash-latest` (the "main" tier) was barely exercised** — most of this evaluation ran
-  on the `cheap` tier's model because `main`'s daily quota was exhausted by early smoke tests.
-  Quality may differ between tiers; not compared head-to-head.
+- **`gemini-flash-latest` (the "main" tier) is still unverified** — genuinely blocked by a quota
+  exhaustion that has now persisted across 2 calendar days. This is the one item from round 2's
+  follow-up list that could not be closed. Needs a fresh key, a paid tier, or the account's quota
+  investigated directly before the `main` tier itself can be called validated.
 - **Anthropic (`heavy` tier) is completely untested** — no key provided.
-- **Free-tier daily quota (20 req/day/model) makes this evaluation genuinely hard to repeat
-  same-day.** `qa/seed-fixture.mjs` + `qa/fixtures/*.json` make the contract-seeding half
-  instantly repeatable; the AI-calling half is quota-gated. A paid tier or a fresh key is needed
-  for a same-day repeat or for testing the `main`/`heavy` tiers properly.
-- **Only 3 fixtures, single-run each** (except Fixtures A and C's risks task, run twice each).
-  Real model output is non-deterministic; a single pass-per-task is evidence, not a guarantee the
-  same fixture won't produce a different false positive on another run.
-- **The Arabic "ثلاث0" digit-rendering glitch** in Fixture C's free-text summary is unexplained
-  and unfixed — low-severity (the correct value is present elsewhere in the same analysis), but
-  worth a second data point before assuming it's rare.
+- **Only 3 fixtures.** Fixture A's risks task and Fixture C's full pipeline have each now run 3x
+  and 2x respectively with consistent results; Fixture B has run 2x. Still a small sample against
+  the space of real-world contract phrasing.
+- **The Arabic digit-rendering glitch** did not reproduce on retry but has only 2 data points
+  total (1 occurrence, 1 clean repeat) — not enough to call it resolved or characterize its rate.
 - **No dedicated "missing indemnification/amendment/auto-renewal clause" playbook rule exists.**
   The fix teaches the model not to misuse the imbalance rules for absence, but a genuinely
   interesting missing-indemnification-clause case (arguably a real risk in some contracts) now
   goes unflagged entirely rather than under the wrong rule. That's the correct tradeoff (a
   misapplied finding is worse than a silent one for a case no rule actually covers), but it's a
   playbook-content gap, not just a prompt-precision one, if that scenario turns out to matter.
+- **Judgment-call findings are not perfectly reproducible run-to-run** (see Output consistency in
+  `qa/FINDINGS.md`) — expected for a non-deterministic model on genuinely borderline input, not a
+  bug, but worth setting expectations on rather than promising identical repeat analyses.
 
 ## Verdict
 
-**Sub-project 3's core analysis logic is sound and, with the fixes above, produces reliable,
-grounded, well-cited output in English, Arabic, and mixed-language contracts on this model.**
-Three real bugs were found and fixed by this validation, all through evidence from real model
-output, not speculation — none would have been caught by the mocked unit-test suite alone. The
-system is **not yet production-ready as originally shipped** (2 of the 3 bugs fixed here would
-have silently destroyed real risk-finding data or leaked internal ids to users); it **is** ready
-now that those fixes are in, with the caveats above (main/heavy tiers, and Fixture B's fix)
-still needing a same-day-repeatable live re-check once quota allows.
+**Sub-project 3's core analysis logic is sound and, with the fixes from both validation rounds,
+produces reliable, grounded, well-cited output in English, Arabic, and mixed-language contracts
+— on the `cheap`-tier Gemini model, confirmed across two full validation rounds and, for the
+highest-severity bug (silent risk-finding loss), three independent live runs.**
 
-**Safe to proceed to Sub-project 4?** Yes, with one condition: sub-project 4 (citation-locked
-chat) will reuse this exact JSON-extraction/parsing discipline, so the two fixes to
-`extractJson`/`prompts.ts` made here directly reduce risk there too. Recommend budgeting a
-second real-model pass (with quota headroom) before trusting citation-locked chat's own
-NOT_FOUND behavior, using the same fixtures.
+This is **not a blanket "Sub-project 3 is production-ready" claim.** What's actually proven:
+the `cheap` tier (`gemini-flash-lite-latest` → resolved `gemini-3.5-flash-lite`) is validated,
+repeatedly, live, end to end. What's still open, tracked as known follow-up rather than assumed
+fine:
+- the `main` tier (the one the code actually defaults to for every real task) remains
+  functionally untested due to a persistent quota block outside this session's control,
+- the `heavy`/Anthropic tier is untested entirely,
+- output is not perfectly deterministic on genuinely borderline risk calls.
+
+**Safe to proceed to Sub-project 4?** Yes, on the condition the user set: as a tracked follow-up,
+not a claim every tier is proven. Sub-project 4 (citation-locked chat) reuses this exact
+JSON-extraction/parsing discipline, so the fixes made here reduce its risk regardless of which
+tier it ends up calling. The `main`/`heavy`-tier validation gap should be closed with a fresh key
+or paid tier before any tier-specific production claim is made, independent of sub-project 4's
+own progress.

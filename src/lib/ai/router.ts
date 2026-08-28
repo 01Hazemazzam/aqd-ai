@@ -108,7 +108,13 @@ export async function callAnthropic(
 
   return {
     text,
-    model: spec.model,
+    // Anthropic echoes back the exact snapshot it served, which can differ
+    // from the alias requested (e.g. a "-latest" tag resolves to a dated
+    // snapshot). Recording the resolved model, not the requested one, is
+    // what makes a usage_events row tell you what actually produced a
+    // result -- load-bearing for QA reproducibility now that model
+    // defaults are aliases rather than pinned versions.
+    model: body.model ?? spec.model,
     inputTokens: body.usage?.input_tokens ?? 0,
     outputTokens: body.usage?.output_tokens ?? 0,
     costUsd: estimateCost(spec, body.usage?.input_tokens ?? 0, body.usage?.output_tokens ?? 0),
@@ -157,7 +163,10 @@ export async function callGemini(
   const usage = body.usageMetadata ?? {}
   return {
     text,
-    model: spec.model,
+    // `spec.model` here is often a rolling alias (e.g. "gemini-flash-latest");
+    // `modelVersion` is what Google actually resolved it to and served. See
+    // the matching comment in callAnthropic.
+    model: body.modelVersion ?? spec.model,
     inputTokens: usage.promptTokenCount ?? 0,
     outputTokens: usage.candidatesTokenCount ?? 0,
     costUsd: estimateCost(spec, usage.promptTokenCount ?? 0, usage.candidatesTokenCount ?? 0),

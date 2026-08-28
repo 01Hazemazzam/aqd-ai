@@ -30,6 +30,25 @@ describe('callAnthropic', () => {
     expect(result.costUsd).toBeCloseTo(1000 / 1_000_000 * 3 + 500 / 1_000_000 * 15)
   })
 
+  it('records the resolved model from the response body, not the requested alias', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        content: [{ text: 'ok' }],
+        usage: {},
+        stop_reason: 'end_turn',
+        model: 'claude-sonnet-4-5-20250929',
+      }),
+    )
+    const result = await callAnthropic({ ...ANTHROPIC_SPEC, model: 'claude-sonnet-4-5-latest' }, 'key', 'sys', 'user', fetchImpl)
+    expect(result.model).toBe('claude-sonnet-4-5-20250929')
+  })
+
+  it('falls back to the requested model if the response omits one', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { content: [{ text: 'ok' }], usage: {}, stop_reason: 'end_turn' }))
+    const result = await callAnthropic(ANTHROPIC_SPEC, 'key', 'sys', 'user', fetchImpl)
+    expect(result.model).toBe(ANTHROPIC_SPEC.model)
+  })
+
   it('throws non-retryable on max_tokens truncation', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse(200, { content: [{ text: '{"incompl' }], usage: {}, stop_reason: 'max_tokens' }),
@@ -66,6 +85,20 @@ describe('callGemini', () => {
     expect(result.text).toBe('{"summary":"hi"}')
     expect(result.inputTokens).toBe(200)
     expect(result.outputTokens).toBe(80)
+  })
+
+  it('records the resolved modelVersion, not the requested rolling alias', async () => {
+    // A real "gemini-flash-lite-latest" call resolved to "gemini-3.5-flash-lite"
+    // -- this is the exact shape that response had.
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        usageMetadata: {},
+        modelVersion: 'gemini-3.5-flash-lite',
+      }),
+    )
+    const result = await callGemini({ ...GEMINI_SPEC, model: 'gemini-flash-lite-latest' }, 'key', 'sys', 'user', fetchImpl)
+    expect(result.model).toBe('gemini-3.5-flash-lite')
   })
 
   it('throws non-retryable when the prompt is safety-blocked (200 with no candidates)', async () => {
