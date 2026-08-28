@@ -1,0 +1,26 @@
+{
+  "title": "QA-MIX Data Processing Addendum",
+  "description": "Mixed Arabic/English, clause-by-clause (not mixed within a clause) -- tests per-clause language detection, cross-language field extraction, and that the risk-scoping fix (a rule about an existing clause being one-sided is not the same as that clause type being absent) holds when the missing clause type is asymmetrically distributed across languages.",
+  "clauses": [
+    { "number": "1", "lang": "en", "body": "Parties. This Data Processing Addendum (\"DPA\") is entered into as of June 1, 2026 between DataVault Systems FZE (\"Processor\") and شركة مجموعة الخليج للتجزئة (\"Controller\")." },
+    { "number": "2", "lang": "ar", "body": "نطاق المعالجة: يلتزم المعالج بمعالجة البيانات الشخصية للعميل حصراً بناءً على تعليمات المتحكم الموثقة، ولا يجوز له استخدام البيانات لأي غرض آخر." },
+    { "number": "3", "lang": "en", "body": "Data Security. The Processor shall implement appropriate technical and organizational measures to protect Controller's data against unauthorized access, loss, or disclosure, consistent with ISO 27001 standards." },
+    { "number": "4", "lang": "ar", "body": "مدة الاحتفاظ بالبيانات: يلتزم المعالج بحذف أو إعادة جميع البيانات الشخصية إلى المتحكم خلال ثلاثين (٣٠) يوماً من تاريخ انتهاء هذه الاتفاقية." },
+    { "number": "5", "lang": "en", "body": "Limitation of Liability. In no event shall either party's liability under this DPA exceed the total fees paid under the main services agreement in the twelve (12) months preceding the claim." },
+    { "number": "6", "lang": "ar", "body": "القانون الحاكم: تخضع هذه الاتفاقية وتُفسَّر وفقاً لقوانين دولة الإمارات العربية المتحدة، وتختص محاكم دبي بالفصل في أي نزاع ينشأ عنها." },
+    { "number": "7", "lang": "en", "body": "Term and Termination. This DPA remains in effect for as long as the underlying services agreement between the parties remains in effect, and terminates automatically upon its termination." }
+  ],
+  "groundTruth": {
+    "fields": {
+      "parties": ["DataVault Systems FZE", "شركة مجموعة الخليج للتجزئة"],
+      "effectiveDate": "June 1, 2026",
+      "termLength": "for as long as the underlying services agreement between the parties remains in effect",
+      "governingLaw": "قوانين دولة الإمارات العربية المتحدة (UAE law, Dubai courts)",
+      "totalValue": null
+    },
+    "expectedRiskRuleKeys": ["confidentiality"],
+    "rulesThatMustNotFire": ["termination_clause", "governing_law", "dispute_resolution", "unlimited_liability", "auto_renewal_notice", "unilateral_amendment", "indemnification_balance"],
+    "expectedObligors": ["المعالج", "Processor"],
+    "note": "governing_law and dispute_resolution are BOTH satisfied by clause 6, which is Arabic-only -- this is the key cross-language test: the model must recognize Arabic-only compliance, not just scan English clauses for these facts. auto_renewal_notice, unilateral_amendment, and indemnification_balance rules must NOT fire even though the contract has no auto-renewal/amendment/indemnification clause at all -- these rules are about an existing clause being one-sided, not about absence."
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "title": "QA-EN Software Licensing Agreement",
+  "description": "English, deliberately planted risks across 6 of the 8 seeded playbook rules plus 2 NOT_FOUND fields.",
+  "clauses": [
+    { "number": "1", "lang": "en", "body": "Parties. This Software Licensing Agreement (\"Agreement\") is entered into as of March 3, 2026 (\"Effective Date\") between Northwind Software Inc., a Delaware corporation (\"Licensor\"), and Bluepeak Retail LLC, a New York limited liability company (\"Licensee\")." },
+    { "number": "2", "lang": "en", "body": "License Grant. Licensor grants Licensee a non-exclusive, non-transferable license to use the Licensor inventory management software (the \"Software\") solely for Licensee internal business operations." },
+    { "number": "3", "lang": "en", "body": "Term. This Agreement commences on the Effective Date and continues for an initial term of twelve (12) months." },
+    { "number": "4", "lang": "en", "body": "Automatic Renewal. This Agreement shall automatically renew for successive twelve (12) month terms unless either party provides notice." },
+    { "number": "5", "lang": "en", "body": "Fees. Licensee shall pay Licensor the fees set out in Exhibit A, due within thirty (30) days of invoice." },
+    { "number": "6", "lang": "en", "body": "Confidentiality. Each party agrees to protect the other party's confidential information using the same degree of care it uses for its own confidential information, and not to disclose such information to any third party without prior written consent." },
+    { "number": "7", "lang": "en", "body": "Limitation of Liability. Licensor's total liability under this Agreement, whether in contract, tort, or otherwise, shall be unlimited, and Licensee shall be entitled to recover all direct, indirect, incidental, and consequential damages arising from any breach by Licensor." },
+    { "number": "8", "lang": "en", "body": "Indemnification. Licensee shall indemnify, defend, and hold harmless Licensor from any and all claims, damages, and expenses arising from Licensee's use of the Software, including claims arising from Licensor's own negligence. Licensor shall have no obligation to indemnify Licensee under any circumstances." },
+    { "number": "9", "lang": "en", "body": "Amendments. Licensor may amend this Agreement at any time by posting updated terms, and such amendments shall be binding on Licensee upon posting." }
+  ],
+  "groundTruth": {
+    "fields": {
+      "parties": ["Northwind Software Inc.", "Bluepeak Retail LLC"],
+      "effectiveDate": "March 3, 2026",
+      "termLength": "twelve (12) months",
+      "governingLaw": null,
+      "totalValue": null
+    },
+    "expectedRiskRuleKeys": [
+      "termination_clause",
+      "unlimited_liability",
+      "auto_renewal_notice",
+      "unilateral_amendment",
+      "governing_law",
+      "indemnification_balance",
+      "dispute_resolution"
+    ],
+    "rulesThatMustNotFire": ["confidentiality"],
+    "expectedObligors": ["Licensee", "Each party"]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "title": "QA-AR اتفاقية تقديم خدمات استشارية",
+  "description": "Arabic, a comparatively well-drafted contract -- tests that the model does NOT over-flag a fair contract, and correctly identifies only the two genuinely missing required clauses.",
+  "clauses": [
+    { "number": "1", "lang": "ar", "body": "الأطراف: أُبرمت هذه الاتفاقية بتاريخ ١٥ يناير ٢٠٢٦ بين شركة الأفق للاستشارات (\"المستشار\") ومؤسسة النخبة التجارية (\"العميل\")." },
+    { "number": "2", "lang": "ar", "body": "نطاق الخدمات: يلتزم المستشار بتقديم خدمات استشارية في مجال إعادة هيكلة العمليات التجارية للعميل." },
+    { "number": "3", "lang": "ar", "body": "المدة: تسري هذه الاتفاقية لمدة ستة (٦) أشهر من تاريخ السريان، وتنتهي تلقائياً دون تجديد ما لم يتفق الطرفان كتابياً على خلاف ذلك." },
+    { "number": "4", "lang": "ar", "body": "الإنهاء: يجوز لأي من الطرفين إنهاء هذه الاتفاقية بإشعار كتابي مسبق مدته ثلاثون (٣٠) يوماً، مع سداد المستشار مقابل الخدمات المنجزة حتى تاريخ الإنهاء." },
+    { "number": "5", "lang": "ar", "body": "الأتعاب: يلتزم العميل بسداد أتعاب استشارية قدرها خمسة وعشرون ألف دينار كويتي (٢٥,٠٠٠ د.ك) دفعة واحدة خلال خمسة عشر (١٥) يوماً من تاريخ توقيع هذه الاتفاقية." },
+    { "number": "6", "lang": "ar", "body": "السرية: يلتزم كل طرف بالحفاظ على سرية المعلومات التجارية للطرف الآخر وعدم إفشائها لأي جهة خارجية دون موافقة كتابية مسبقة." },
+    { "number": "7", "lang": "ar", "body": "التعديل: يجوز لأي من الطرفين اقتراح تعديل هذه الاتفاقية، على أن يكون التعديل نافذاً فقط بموافقة كتابية من الطرفين." },
+    { "number": "8", "lang": "ar", "body": "حدود المسؤولية: تقتصر مسؤولية المستشار عن أي أضرار ناشئة عن هذه الاتفاقية على قيمة الأتعاب المدفوعة فعلياً من العميل." }
+  ],
+  "groundTruth": {
+    "fields": {
+      "parties": ["شركة الأفق للاستشارات", "مؤسسة النخبة التجارية"],
+      "effectiveDate": "١٥ يناير ٢٠٢٦",
+      "termLength": "ستة (٦) أشهر",
+      "governingLaw": null,
+      "totalValue": "٢٥,٠٠٠ د.ك (خمسة وعشرون ألف دينار كويتي)"
+    },
+    "expectedRiskRuleKeys": ["governing_law", "dispute_resolution"],
+    "rulesThatMustNotFire": ["termination_clause", "auto_renewal_notice", "unilateral_amendment"],
+    "expectedObligors": ["المستشار", "العميل", "كل طرف"],
+    "note": "unlimited_liability and indemnification_balance are debatable here: clause 8 caps only the Consultant's liability with no reciprocal cap for the Client, which is a defensible 'one-sided liability' reading of the unlimited_liability rule even though nothing is literally 'unlimited'. Record the model's call and reasoning rather than scoring it a hard pass/fail."
+  }
+}

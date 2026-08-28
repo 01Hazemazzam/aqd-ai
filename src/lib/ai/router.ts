@@ -33,13 +33,18 @@ interface ModelSpec {
 const TIERS: Record<Tier, ModelSpec> = {
   cheap: {
     provider: 'gemini',
-    model: process.env.AI_MODEL_CHEAP ?? 'gemini-2.5-flash-lite',
+    // Rolling aliases, not a pinned version: gemini-2.5-flash-lite (the
+    // previous default here) returned 404 "no longer available to new
+    // users" during real-model validation. Google's own error message
+    // recommended pinning forward again, but the alias is what actually
+    // resists the same breakage next time a model generation retires.
+    model: process.env.AI_MODEL_CHEAP ?? 'gemini-flash-lite-latest',
     inputPricePerMTok: 0.1,
     outputPricePerMTok: 0.4,
   },
   main: {
     provider: 'gemini',
-    model: process.env.AI_MODEL_MAIN ?? 'gemini-2.5-flash',
+    model: process.env.AI_MODEL_MAIN ?? 'gemini-flash-latest',
     inputPricePerMTok: 0.3,
     outputPricePerMTok: 2.5,
   },

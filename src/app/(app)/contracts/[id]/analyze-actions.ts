@@ -55,7 +55,11 @@ async function runTask<T>(
       costUsd: result.costUsd,
     })
     return { ok: true, data: extractJson<T>(task, result.text) }
-  } catch {
+  } catch (err) {
+    // A silent catch here is undiagnosable in production -- when a task
+    // fails, this is the only record of why. Logged, not thrown: one
+    // failed task must never take the other three down.
+    console.error(`[analyzeContract] task "${task}" failed:`, err instanceof Error ? err.message : err)
     return { ok: false, data: null }
   }
 }
