@@ -15,6 +15,7 @@
       "code": "Verification code",
       "submit": "Verify",
       "resend": "Resend code",
+      "resent": "A new code is on its way.",
       "resendIn": "Resend in {seconds}s",
       "sendFailed": "We couldn't send the code. Try resending in a moment."
     },
@@ -58,7 +59,8 @@
       "codeIncorrect": "That code isn't right. {remaining} attempts left.",
       "codeExpired": "That code has expired. Request a new one.",
       "codeBurned": "Too many attempts. Request a new code.",
-      "rateLimited": "Too many requests. Try again in an hour."
+      "rateLimited": "Too many requests. Try again in an hour.",
+      "unknown": "Something went wrong. Please try again."
     }
   },
   "onboarding": {
@@ -78,6 +80,9 @@
     "appName": "Aqd",
     "loading": "Loading",
     "theme": "Theme",
-    "language": "Language"
+    "language": "Language",
+    "themeToDark": "Switch to dark mode",
+    "themeToLight": "Switch to light mode",
+    "switchLanguage": "Switch language"
   }
 }

@@ -4,10 +4,17 @@ import { headers } from 'next/headers'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { verifyCode } from '@/lib/auth/codes'
 import { ensureDeviceSecret } from '@/lib/auth/device'
+import { requireSession } from '@/lib/auth/guards'
 
 const TRUST_DAYS = 30
 
 export async function submitChallenge(_prev: unknown, formData: FormData) {
+  // The route layout already gates this screen; this second check covers the
+  // session expiring between page load and submit. Without it verify_code's
+  // `not_authenticated` comes back as an unmapped error and renders as
+  // "that code isn't right", which is untrue and unactionable.
+  await requireSession()
+
   const code = String(formData.get('code') ?? '')
   const trust = formData.get('trust') === 'on'
 

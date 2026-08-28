@@ -13,11 +13,17 @@ export default function VerifyPage() {
   const params = useSearchParams()
   const [code, setCode] = useState('')
   const [state, action, pending] = useActionState(submitVerification, null)
+  const [resendState, resendAction, resendPending] = useActionState(resendCode, null)
 
+  // The final `state?.error ?` branch matters: without it an unrecognised
+  // failure set `errorText` to undefined and the form appeared to do nothing
+  // at all on submit.
   const errorText =
     state?.error === 'code_expired' ? e('codeExpired')
     : state?.error === 'code_burned' ? e('codeBurned')
     : state?.error === 'code_incorrect' ? e('codeIncorrect', { remaining: 4 })
+    : state?.error === 'rate_limited' ? e('rateLimited')
+    : state?.error ? e('unknown')
     : undefined
 
   return (
@@ -32,9 +38,15 @@ export default function VerifyPage() {
         <input type="hidden" name="code" value={code} />
         <Button type="submit" loading={pending} disabled={code.length < 6}>{t('submit')}</Button>
       </form>
-      <form action={resendCode} className="mt-4">
-        <Button type="submit" variant="ghost">{t('resend')}</Button>
+      <form action={resendAction} className="mt-4">
+        <Button type="submit" variant="ghost" loading={resendPending}>{t('resend')}</Button>
       </form>
+      {resendState?.error && (
+        <p role="alert" className="mt-2 text-xs text-risk-high">{e('unknown')}</p>
+      )}
+      {resendState?.sent && (
+        <p role="status" className="mt-2 text-xs text-ink-dim">{t('resent')}</p>
+      )}
     </AuthShell>
   )
 }

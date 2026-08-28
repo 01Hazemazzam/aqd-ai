@@ -61,6 +61,18 @@ test('an unverified visitor cannot reach the app by URL', async ({ page }) => {
   await expect(page).toHaveURL(/\/login/)
 })
 
+// The mid-auth screens are post-authentication: they all act on the caller's
+// own session. Reachable while signed out, they render a working-looking code
+// form whose every submission is rejected by the database as
+// `not_authenticated` -- surfacing to the visitor as "that code isn't right",
+// which is both misleading and indistinguishable from a real attempt.
+for (const path of ['/verify', '/challenge', '/onboarding']) {
+  test(`a signed-out visitor cannot reach ${path}`, async ({ page }) => {
+    await page.goto(path)
+    await expect(page).toHaveURL(/\/login/)
+  })
+}
+
 test('signing in on a fresh device raises the challenge', async ({ browser }) => {
   const email = `e2e-dev-${Date.now()}@test.local`
   const first = await browser.newContext()

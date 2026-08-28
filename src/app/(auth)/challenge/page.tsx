@@ -12,10 +12,15 @@ export default function ChallengePage() {
   const [code, setCode] = useState('')
   const [state, action, pending] = useActionState(submitChallenge, null)
 
+  // Each branch is explicit. A catch-all `state?.error ?` here would report
+  // *any* failure -- including an auth or network error -- as a wrong code,
+  // telling the user something untrue about an attempt that never counted.
   const errorText =
     state?.error === 'code_expired' ? e('codeExpired')
     : state?.error === 'code_burned' ? e('codeBurned')
-    : state?.error ? e('codeIncorrect', { remaining: 4 })
+    : state?.error === 'code_incorrect' ? e('codeIncorrect', { remaining: 4 })
+    : state?.error === 'rate_limited' ? e('rateLimited')
+    : state?.error ? e('unknown')
     : undefined
 
   return (
