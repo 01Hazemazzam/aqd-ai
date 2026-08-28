@@ -1,5 +1,8 @@
 {
   "auth": {
+    "resend": "Resend code",
+    "resent": "A new code is on its way.",
+    "notYou": "Not you? Sign in with a different account",
     "signup": {
       "title": "Create your account",
       "subtitle": "Analyze contracts in Arabic and English.",
@@ -14,8 +17,6 @@
       "subtitle": "We sent a 6-digit code to {email}.",
       "code": "Verification code",
       "submit": "Verify",
-      "resend": "Resend code",
-      "resent": "A new code is on its way.",
       "resendIn": "Resend in {seconds}s",
       "sendFailed": "We couldn't send the code. Try resending in a moment."
     },

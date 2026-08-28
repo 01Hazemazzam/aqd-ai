@@ -1,12 +1,28 @@
 'use server'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
+import { getLocale } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
-import { verifyCode } from '@/lib/auth/codes'
+import { verifyCode, issueAndSendCode } from '@/lib/auth/codes'
 import { ensureDeviceSecret } from '@/lib/auth/device'
 import { requireSession } from '@/lib/auth/guards'
+import type { Locale } from '@/lib/i18n/config'
 
 const TRUST_DAYS = 30
+
+// The challenge screen had no way to request a fresh code; a mistyped or
+// expired one left the only recourse as starting login over. Mirrors verify's
+// resendCode: (prevState, formData) so useActionState can drive it.
+export async function resendChallenge(_prev: unknown, _formData: FormData) {
+  await requireSession()
+
+  const supabase = await createServerSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user?.email) return { error: 'unknown' as const }
+  const locale = (await getLocale()) as Locale
+  const { sent, error } = await issueAndSendCode('device_challenge', user.email, locale)
+  return sent ? { sent: true as const } : { error: error ?? ('unknown' as const) }
+}
 
 export async function submitChallenge(_prev: unknown, formData: FormData) {
   // The route layout already gates this screen; this second check covers the
