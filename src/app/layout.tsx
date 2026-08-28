@@ -1,8 +1,17 @@
 import './globals.css'
+import type { Metadata } from 'next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextIntlClientProvider } from 'next-intl'
-import { getLocale, getMessages } from 'next-intl/server'
+import { getLocale, getMessages, getTranslations } from 'next-intl/server'
 import { dirFor, type Locale } from '@/lib/i18n/config'
+
+// A non-empty <title> is a WCAG 2.4.2 / axe "document-title" requirement,
+// caught by e2e/a11y.spec.ts -- every page needs one, so it lives here
+// rather than duplicated per (client-component) auth page.
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('common')
+  return { title: t('appName') }
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = (await getLocale()) as Locale
