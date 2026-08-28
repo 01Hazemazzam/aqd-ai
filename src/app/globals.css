@@ -20,6 +20,23 @@
 
   --leading-latin: 1.7;
   --leading-arabic: 1.9;
+
+  /* Same self-reference trap as the colours above: these unprefixed names
+     get mapped to the --font-* names Tailwind's font-* utilities read from,
+     by @theme inline below. Latin by default; html[dir="rtl"] overrides all
+     three to their Arabic counterparts, so `font-serif`/`font-sans`/
+     `font-wordmark` stay correct without touching a single component. */
+  --sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Newsreader', ui-serif, Georgia, serif;
+  /* The wordmark gets its own, more characterful face -- distinct from the
+     body/heading serif so "Aqd" reads as a mark, not just a headline. */
+  --wordmark: 'Fraunces', 'Newsreader', ui-serif, Georgia, serif;
+}
+
+html[dir="rtl"] {
+  --sans: 'IBM Plex Sans Arabic', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Amiri', ui-serif, Georgia, serif;
+  --wordmark: 'Aref Ruqaa', 'Amiri', ui-serif, Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -67,10 +84,14 @@
   --color-risk-high: var(--risk-high);
   --color-risk-medium: var(--risk-medium);
   --color-risk-low: var(--risk-low);
+
+  --font-sans: var(--sans);
+  --font-serif: var(--serif);
+  --font-wordmark: var(--wordmark);
 }
 
 html { background: var(--surface); color: var(--ink); }
-body { line-height: var(--leading-latin); }
+body { line-height: var(--leading-latin); font-family: var(--sans); }
 html[dir="rtl"] body { line-height: var(--leading-arabic); }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

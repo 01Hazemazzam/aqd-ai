@@ -4,7 +4,7 @@ import type { Locale } from '@/lib/i18n/config'
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 const SUBJECT: Record<Locale, string> = {
-  en: 'Your Aqd AI verification code',
+  en: 'Your Aqd verification code',
   ar: 'رمز التحقق الخاص بك في عقد',
 }
 

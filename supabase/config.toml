@@ -248,7 +248,7 @@ otp_expiry = 3600
 # content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.recovery]
-subject = "Your Aqd AI password reset code"
+subject = "Your Aqd password reset code"
 content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize notification email template

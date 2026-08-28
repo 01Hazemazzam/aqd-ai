@@ -9,7 +9,7 @@ export function AuthShell({ title, subtitle, children }: {
   return (
     <div className="grid min-h-dvh lg:grid-cols-2">
       <div className="flex flex-col px-6 py-10 sm:px-10">
-        <span className="font-serif text-lg font-medium tracking-tight text-ink">{c('appName')}</span>
+        <span className="font-wordmark text-xl font-semibold tracking-tight text-ink">{c('appName')}</span>
         <div className="flex flex-1 items-center justify-center py-8">
           <div className="w-full max-w-sm">
             <h1 className="mb-2 font-serif text-3xl font-medium tracking-tight text-ink">{title}</h1>

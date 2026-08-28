@@ -3,6 +3,6 @@ import { appName } from '@/lib/constants'
 
 describe('scaffold', () => {
   it('exposes the app name', () => {
-    expect(appName).toBe('Aqd AI')
+    expect(appName).toBe('Aqd')
   })
 })

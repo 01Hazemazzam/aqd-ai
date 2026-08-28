@@ -1,1 +1,1 @@
-export const appName = 'Aqd AI'
+export const appName = 'Aqd'

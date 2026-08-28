@@ -1,4 +1,4 @@
-# Aqd AI (عقد)
+# Aqd (عقد)
 
 A bilingual (Arabic-first / English) AI contract-analysis platform: upload a contract, get it segmented into clauses, summarised, risk-scored against a legal playbook, and turned into an obligations calendar — then ask it questions through a citation-locked chat that refuses to answer from anything but the document itself.
 
