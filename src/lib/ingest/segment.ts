@@ -38,9 +38,18 @@ interface RawClause {
   lines: string[]
 }
 
+// Lines before the first recognized heading (a title, a party/date table, a
+// recital paragraph) previously had nowhere to go: `current` is still null
+// at that point, and the `else if (current)` branch silently drops them.
+// That's exactly where a real contract's party names typically live -- lost
+// before any prompt ever saw them, which is why "Parties" extracted blank
+// even though both names were explicit in the source document. Captured
+// here as a leading, unnumbered clause instead, the same shape
+// splitByParagraphs already uses for content with no clause numbering.
 function splitByHeadings(lines: string[]): RawClause[] {
   const clauses: RawClause[] = []
   let current: RawClause | null = null
+  const preamble: string[] = []
 
   for (const line of lines) {
     const heading = matchHeading(line)
@@ -49,9 +58,20 @@ function splitByHeadings(lines: string[]): RawClause[] {
       current = { clauseNumber: heading.clauseNumber, lines: heading.rest ? [heading.rest] : [] }
     } else if (current) {
       current.lines.push(line)
+    } else {
+      preamble.push(line)
     }
   }
   if (current) clauses.push(current)
+
+  // Only worth keeping as its own clause when a real heading was found
+  // later on -- for a document with NO headings at all, prepending it here
+  // would collapse the whole thing into one undifferentiated blob instead
+  // of correctly falling through to segmentClauses' own splitByParagraphs
+  // fallback below (clauses.length === 0 is what triggers that).
+  if (clauses.length > 0 && preamble.some((l) => l.trim())) {
+    clauses.unshift({ clauseNumber: null, lines: preamble })
+  }
   return clauses
 }
 

@@ -138,6 +138,7 @@
       "notFound": "This isn't stated in the contract.",
       "errors": {
         "ai_disabled": "Chat isn't configured yet. Add an API key to enable it.",
+        "quota_exceeded": "The AI provider's daily quota is exhausted for this model. Try again after it resets, or switch model tiers.",
         "upstream_failed": "Something went wrong answering that. Try again.",
         "unknown": "Something went wrong. Try again."
       }

@@ -2,9 +2,10 @@
 // @vitest-environment node
 //
 // Regression coverage for a real user-reported PDF (tests/fixtures/
-// advanced-contract-test.pdf, a 4-page, 28-clause synthetic contract). Two
-// defects were found by running the actual production parseDocument/
-// segmentClauses against it, not by inspection:
+// advanced-contract-test.pdf, a 4-page contract with 28 numbered clauses
+// plus an unnumbered preamble). Three defects were found by running the
+// actual production parseDocument/segmentClauses against it, not by
+// inspection:
 //
 // 1. Real bug, fixed here: unpdf's merged text has no page-boundary
 //    markers, so this PDF's running header/footer ("Aqd AI synthetic QA
@@ -16,7 +17,16 @@
 //    number) across nearly every page, detected structurally rather than by
 //    matching this fixture's specific text.
 //
-// 2. NOT an Aqd bug -- confirmed and left as documented, asserted behavior:
+// 2. Real bug, fixed here: the Provider/Customer names sit in a table
+//    before "Clause 1 - Definitions", and splitByHeadings had nowhere to
+//    put lines seen before the first heading -- they were silently dropped,
+//    never reaching any prompt. That's why "Parties" extracted blank
+//    despite both names being explicit in the source document. Fixed in
+//    segment.ts by capturing pre-heading lines as a leading, unnumbered
+//    clause (only when a real heading follows -- a headingless document
+//    must still fall through to the paragraph-splitting fallback below).
+//
+// 3. NOT an Aqd bug -- confirmed and left as documented, asserted behavior:
 //    Clause 27's body is written entirely in Arabic. Direct inspection of
 //    pdf.js's own per-page getTextContent() (not just unpdf's wrapper) shows
 //    zero text items for that entire line -- the Arabic run occupies real
@@ -39,17 +49,29 @@ async function parseFixture() {
 }
 
 describe('advanced-contract-test.pdf (real user-reported fixture)', () => {
-  it('segments into all 28 clauses with no page-boundary header/footer contamination', async () => {
+  it('segments into the preamble plus all 28 clauses with no page-boundary header/footer contamination', async () => {
     const rawText = await parseFixture()
     expect(rawText).not.toMatch(/testing only/)
     expect(rawText).not.toMatch(/Page \d/)
 
     const clauses = segmentClauses(rawText)
-    expect(clauses).toHaveLength(28)
+    expect(clauses).toHaveLength(29)
     for (const clause of clauses) {
       expect(clause.body).not.toMatch(/testing only/)
       expect(clause.body).not.toMatch(/Page \d/)
     }
+  })
+
+  it('captures the Provider/Customer names from the preamble table instead of dropping them', async () => {
+    const rawText = await parseFixture()
+    const clauses = segmentClauses(rawText)
+    const preamble = clauses.find((c) => c.clauseNumber === null)
+    expect(preamble).toBeDefined()
+    expect(preamble!.body).toContain('Atlas Meridian Technologies Ltd.')
+    expect(preamble!.body).toContain('Gulf Horizon Distribution W.L.L.')
+    // The real numbered clauses must still start at 1, unaffected by the
+    // preamble now occupying ordinal 1.
+    expect(clauses.find((c) => c.clauseNumber === '1')!.body).toContain('Definitions')
   })
 
   it('preserves genuinely one-off text that is not a repeating header/footer', async () => {

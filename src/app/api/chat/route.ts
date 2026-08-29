@@ -108,7 +108,17 @@ export async function POST(request: Request) {
         const matchesWithId = retrieved.map((m) => ({ id: m.id, clauseNumber: m.clause_number, lang: m.lang, body: m.body }))
         await persistAndClose(notFound ? 'NOT_FOUND' : repairedText, notFound, matchesWithId)
       } catch (err) {
-        const errorCode = err instanceof AiDisabledError ? 'ai_disabled' : err instanceof AiUpstreamError ? 'upstream_failed' : 'unknown'
+        // Previously unlogged entirely -- a real 429 quota exhaustion (the
+        // same Google free-tier daily limit already hit by the analysis
+        // pipeline, see qa/FINDINGS.md) rendered as "Something went wrong
+        // answering that" with zero trace of why, anywhere. Logged here the
+        // same way analyze-actions.ts's runTask logs a task failure.
+        console.error('[chat] request failed:', err instanceof Error ? err.message : err)
+        const errorCode =
+          err instanceof AiDisabledError ? 'ai_disabled'
+          : err instanceof AiUpstreamError && err.status === 429 ? 'quota_exceeded'
+          : err instanceof AiUpstreamError ? 'upstream_failed'
+          : 'unknown'
         send('error', { error: errorCode })
         controller.close()
       }

@@ -616,3 +616,86 @@ untested `main`/`heavy` AI tiers.
 - `tests/ingest/advanced-contract-test.test.ts` — the real fixture segments into all 28 clauses
   with zero header/footer contamination; the one-off closing disclaimer survives; Clause 27 still
   exists with its (unrecoverable) Arabic body documented as expected, not silently regressed
+
+---
+
+## Follow-up pass: chat "Something went wrong" on every question, Parties extraction blank, Resend blocker confirmed, grounding re-audited
+
+Instructed to stop new feature work and fix these before continuing. Root-caused each before
+touching code, with hard evidence at every step.
+
+🟢 **Chat: same root cause as the analysis pipeline (main-tier 429), but worse -- completely
+unlogged, not just genericized.** Live reproduction: multiple real `/api/chat` requests each took
+~8.5-9.7s (the exact `fetchStreamWithRetry` backoff shape for a persistent 429: 1+2+4s + overhead),
+and the dev server log contained **zero** occurrences of "429" or "RESOURCE_EXHAUSTED" anywhere --
+unlike `analyze-actions.ts`'s `runTask`, `route.ts`'s catch block never called `console.error` at
+all. The UI showed "حدث خطأ أثناء الإجابة. حاول مرة أخرى." (`chat.errors.upstream_failed`, the
+same generic message for every non-`ai_disabled` failure). Fixed by adding the missing
+`console.error` and classifying `AiUpstreamError.status === 429` as a new `quota_exceeded` chat
+error code, mirroring the analysis-pipeline fix exactly. **Verified live, full success path, on a
+freshly uploaded copy of the same fixture contract** with `main` tier pointed at the working
+`cheap` model via a process-only env var (never written to `.env.local`): a grounded liability
+question returned a correct answer citing Clause 18, with the citation verified in the database to
+point at the real Clause 18 row; a late-payment-penalty question (the contract states a due date
+but no penalty) correctly returned the Arabic `NOT_FOUND` message; and an Arabic governing-law
+question against the English-only Clause 23 returned a clean, correctly-grounded Arabic answer
+("تخضع هذه الاتفاقية لقوانين دولة الكويت [1]") with no Unicode corruption and no unnecessary
+language switching -- covering the normal-answer, NOT_FOUND, citation-correctness, and
+cross-language requirements together in one live pass.
+
+🟢 **Parties extraction was blank -- real bug in segmentation, not the AI prompt, now fixed.**
+The Provider/Customer names sit in a table before "Clause 1 - Definitions" in the source PDF.
+`segmentClauses`'s `splitByHeadings` had nowhere to put lines seen before the first heading match
+(`current` is `null` until the first heading, and the `else if (current)` branch silently drops
+anything before that) -- confirmed directly: the segmented Clause 1 body started exactly at
+"Definitions", with the entire title/description/party-table/dates preamble gone before it ever
+reached `fieldsPrompt`. Fixed in `segment.ts` by capturing pre-heading lines as a leading,
+unnumbered clause -- but only when a real heading is found later in the document, since a
+genuinely headingless document must still fall through to `segmentClauses`' own paragraph-splitting
+fallback (an early version of this fix broke exactly that case; caught by the existing
+`segment.test.ts` suite before it shipped). **Verified live:** re-uploaded the same fixture as a
+fresh contract, the reader now shows an unnumbered "Clause 1" preamble containing both company
+names before the real numbered clauses begin; re-analyzing produced "Atlas Meridian Technologies
+Ltd., Gulf Horizon Distribution W.L.L." in the Parties field (previously "—"), and the summary
+itself now names both parties by name instead of generic phrasing.
+
+⚪ **Email OTP: confirmed as an external blocker, not a code bug -- and there are two blockers,
+not one.** `RESEND_API_KEY` is unset in `.env.local`, so no real email provider is configured; this
+is why no real email is ever sent, exactly the documented dev-mode fallback (on-screen code)
+behavior, already live-verified end to end in the prior pass. Went further this time per explicit
+instruction that the dev hint doesn't count as verification: read `resend@6.24.0`'s own type
+definitions and confirmed `email.ts`'s `resend.emails.send({from, to, subject, html})` call exactly
+matches the real SDK's `CreateEmailOptions` shape -- the code itself is correct and would work with
+a real key. Verified with a test that mocks the `resend` package's constructor (not a real network
+call): the payload sent matches exactly, and a rejected send degrades to `false` rather than
+throwing. **A second, independent blocker found:** `EMAIL_FROM="Aqd <auth@example.com>"` uses
+`example.com`, a reserved documentation domain that can never pass Resend's required DNS
+verification -- real delivery would still fail on an unverified-domain error even after adding a
+real API key, until `EMAIL_FROM` points at an actual verified sending domain.
+
+⚪ **Google login: unchanged from the prior pass, re-confirmed still accurate.** No real Google
+Cloud OAuth client is available in this environment (`SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID`/
+`_SECRET` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` all blank in `.env.local`) -- external blocker, not a
+code defect. The button correctly detects this and shows "Google sign-in isn't configured yet."
+without ever leaving the app, exactly as fixed and live-verified in the OAuth work earlier in this
+session; `tests/auth/google-button.test.tsx` still passes.
+
+🟢 **Grounding/isolation: re-audited exhaustively across every chat ever recorded in this
+database, not just spot-checked.** Three direct SQL queries against the full `citations`/
+`chat_messages`/`chats`/`clauses`/`contracts` join graph: zero citations point to a clause outside
+their own chat's contract; zero citations have an `org_id` disagreeing with their clause's
+`org_id`; zero chats have an `org_id` disagreeing with their own contract's `org_id`. Consistent
+with the dedicated isolation investigation from the prior session (`tests/chat/
+grounding-isolation.test.ts`) -- no leak found, this time checked database-wide rather than against
+one pair of fixtures.
+
+**Regression tests added:**
+- `tests/chat/api-error-classification.test.ts` — the chat route logs the real upstream error and
+  classifies a 429 as `quota_exceeded`, a non-429 upstream error as `upstream_failed`, and a
+  missing key as `ai_disabled`
+- `tests/auth/email.test.ts` — `sendCodeEmail` calls the real Resend SDK shape correctly when a
+  key is configured, degrades to `false` (not a throw) on a rejected send, and never calls Resend
+  at all when unconfigured (the exact condition this environment is actually in)
+- `tests/ingest/segment.test.ts` (existing suite, caught a real regression in this pass) plus a new
+  case in `tests/ingest/advanced-contract-test.test.ts` — the preamble clause captures both party
+  names and the numbered clauses still start correctly at 1
