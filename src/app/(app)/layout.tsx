@@ -1,6 +1,7 @@
 import { requireVerified } from '@/lib/auth/guards'
+import { AppShell } from '@/components/app-shell'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireVerified()
-  return <div className="min-h-dvh bg-surface">{children}</div>
+  return <AppShell>{children}</AppShell>
 }

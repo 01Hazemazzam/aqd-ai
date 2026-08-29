@@ -15,6 +15,13 @@ export async function signIn(_prev: unknown, formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) return { error: toAuthErrorCode(error) }
 
+  // Written only on success: a failed attempt has no session yet, so there is
+  // no RLS-permitted way to attribute it to a specific user without a
+  // security-definer function -- and doing that carefully (without becoming
+  // an account-enumeration oracle, the exact thing this login flow already
+  // guards against) is its own piece of work, not a side effect of this one.
+  await supabase.from('auth_events').insert({ kind: 'login' })
+
   const secret = await getDeviceSecret()
   const { data: trusted } = await supabase.rpc('is_device_trusted', { p_secret: secret ?? '' })
   if (trusted) {

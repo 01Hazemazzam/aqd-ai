@@ -4,16 +4,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const redirect = vi.fn()
 const signInWithPassword = vi.fn()
 const rpc = vi.fn()
+const insert = vi.fn().mockResolvedValue({ error: null })
 const issueAndSendCode = vi.fn().mockResolvedValue({ sent: true })
 
 vi.mock('next/navigation', () => ({ redirect }))
 vi.mock('@/lib/supabase/server', () => ({
-  createServerSupabase: async () => ({ auth: { signInWithPassword, getUser: async () => ({ data: { user: { email: 'a@b.c' } } }) }, rpc }),
+  createServerSupabase: async () => ({
+    auth: { signInWithPassword, getUser: async () => ({ data: { user: { email: 'a@b.c' } } }) },
+    rpc,
+    from: () => ({ insert }),
+  }),
 }))
 vi.mock('@/lib/auth/device', () => ({ getDeviceSecret: async () => 'known-secret' }))
 vi.mock('@/lib/auth/codes', () => ({ issueAndSendCode }))
 
-beforeEach(() => { redirect.mockClear(); rpc.mockClear(); issueAndSendCode.mockClear() })
+beforeEach(() => { redirect.mockClear(); rpc.mockClear(); insert.mockClear(); issueAndSendCode.mockClear() })
 
 describe('signIn', () => {
   it('goes straight to the app when the device is trusted', async () => {
@@ -24,6 +29,7 @@ describe('signIn', () => {
     await signIn(null, fd)
     expect(redirect).toHaveBeenCalledWith('/')
     expect(issueAndSendCode).not.toHaveBeenCalled()
+    expect(insert).toHaveBeenCalledWith({ kind: 'login' })
   })
 
   it('challenges when the device is not trusted', async () => {

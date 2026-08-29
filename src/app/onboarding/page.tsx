@@ -1,24 +1,35 @@
-'use client'
-import { useActionState } from 'react'
-import { useTranslations } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
+import { createServerSupabase } from '@/lib/supabase/server'
 import { AuthShell } from '@/components/auth/auth-shell'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { createOrganization } from './actions'
+import { CreateOrgForm } from './create-org-form'
+import { AcceptInviteForm } from './accept-invite-form'
 
-export default function OnboardingPage() {
-  const t = useTranslations('onboarding')
-  const [state, action, pending] = useActionState(createOrganization, null)
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ invite?: string }>
+}) {
+  const t = await getTranslations('onboarding')
+  const { invite } = await searchParams
+
+  if (invite) {
+    const supabase = await createServerSupabase()
+    const { data } = await supabase.rpc('preview_invite', { p_token: invite }).maybeSingle()
+    const preview = data as { org_name: string; role: 'owner' | 'admin' | 'member' } | null
+    if (preview) {
+      return (
+        <AuthShell title={t('inviteTitle')} subtitle="">
+          <AcceptInviteForm token={invite} orgName={preview.org_name} role={preview.role} />
+        </AuthShell>
+      )
+    }
+    // Falls through to the create-organization form below: an invalid or
+    // expired invite link shouldn't strand the user with no way forward.
+  }
 
   return (
     <AuthShell title={t('title')} subtitle={t('subtitle')}>
-      <form action={action} className="flex flex-col gap-4">
-        <Input
-          label={t('name')} name="name" required
-          error={state?.error === 'invalid_name' ? t('name') : undefined}
-        />
-        <Button type="submit" loading={pending}>{t('submit')}</Button>
-      </form>
+      <CreateOrgForm />
     </AuthShell>
   )
 }

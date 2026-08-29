@@ -33,3 +33,34 @@ export async function sendCodeEmail(to: string, code: string, locale: Locale): P
     return false
   }
 }
+
+const INVITE_SUBJECT: Record<Locale, (orgName: string) => string> = {
+  en: (orgName) => `You've been invited to join ${orgName} on Aqd`,
+  ar: (orgName) => `تمت دعوتك للانضمام إلى ${orgName} على عقد`,
+}
+
+const INVITE_BODY: Record<Locale, (orgName: string, url: string) => string> = {
+  en: (orgName, url) =>
+    `<p>You've been invited to join <strong>${orgName}</strong> on Aqd.</p><p><a href="${url}">Accept the invitation</a></p><p>This link expires in 7 days.</p>`,
+  ar: (orgName, url) =>
+    `<div dir="rtl"><p>تمت دعوتك للانضمام إلى <strong>${orgName}</strong> على عقد.</p><p><a href="${url}">قبول الدعوة</a></p><p>تنتهي صلاحية هذا الرابط خلال ٧ أيام.</p></div>`,
+}
+
+/** Returns false rather than throwing: a send failure must not strand the inviter. */
+export async function sendInviteEmail(to: string, orgName: string, url: string, locale: Locale): Promise<boolean> {
+  if (!resend) {
+    if (process.env.NODE_ENV !== 'production') console.info(`[dev] invite for ${to}: ${url}`)
+    return process.env.NODE_ENV !== 'production'
+  }
+  try {
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM!,
+      to,
+      subject: INVITE_SUBJECT[locale](orgName),
+      html: INVITE_BODY[locale](orgName, url),
+    })
+    return true
+  } catch {
+    return false
+  }
+}

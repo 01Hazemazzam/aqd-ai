@@ -71,7 +71,8 @@
     "submit": "إنشاء المؤسسة",
     "inviteTitle": "لقد تمت دعوتك",
     "inviteBody": "دعتك {org} للانضمام بصفة {role}.",
-    "acceptInvite": "قبول الدعوة"
+    "acceptInvite": "قبول الدعوة",
+    "inviteInvalid": "هذه الدعوة غير صالحة أو انتهت صلاحيتها."
   },
   "dashboard": {
     "welcome": "أهلاً بك.",
@@ -141,6 +142,58 @@
     "language": "اللغة",
     "themeToDark": "التبديل إلى الوضع الداكن",
     "themeToLight": "التبديل إلى الوضع الفاتح",
-    "switchLanguage": "تغيير اللغة"
+    "switchLanguage": "تغيير اللغة",
+    "nav": {
+      "contracts": "العقود",
+      "team": "الفريق",
+      "security": "الأمان",
+      "signOut": "تسجيل الخروج"
+    }
+  },
+  "security": {
+    "title": "الأمان",
+    "devicesTitle": "الأجهزة الموثوقة",
+    "devicesEmpty": "لا توجد أجهزة موثوقة.",
+    "unknownDevice": "جهاز غير معروف",
+    "lastActive": "آخر نشاط {date}",
+    "revoke": "إلغاء الثقة",
+    "activityTitle": "النشاط الأخير",
+    "activityEmpty": "لا يوجد نشاط حديث.",
+    "signedInAs": "مسجّل الدخول باسم {email}",
+    "events": {
+      "login": "تسجيل دخول",
+      "code_sent": "تم إرسال رمز التحقق",
+      "code_failed": "إدخال رمز تحقق غير صحيح",
+      "code_send_failed": "فشل إرسال رمز التحقق",
+      "device_trusted": "تمت الوثوق بالجهاز",
+      "device_revoked": "تم إلغاء الوثوق بالجهاز",
+      "org_created": "تم إنشاء المؤسسة",
+      "invite_created": "تم إرسال دعوة للفريق",
+      "invite_accepted": "تم قبول دعوة الفريق"
+    }
+  },
+  "team": {
+    "title": "الفريق",
+    "inviteTitle": "دعوة عضو",
+    "emailLabel": "البريد الإلكتروني",
+    "roleLabel": "الدور",
+    "inviteCta": "إرسال الدعوة",
+    "inviteSent": "تم إرسال الدعوة.",
+    "membersTitle": "الأعضاء",
+    "you": "أنت",
+    "pendingTitle": "الدعوات المعلّقة",
+    "cancelInvite": "إلغاء",
+    "remove": "إزالة",
+    "lastOwnerNotice": "المالك الوحيد — لا يمكن تغييره أو إزالته",
+    "roles": {
+      "owner": "مالك",
+      "admin": "مسؤول",
+      "member": "عضو"
+    },
+    "errors": {
+      "invalid_email": "أدخل بريدًا إلكترونيًا صالحًا.",
+      "not_authorized": "ليست لديك صلاحية القيام بذلك.",
+      "unknown": "حدث خطأ ما. حاول مرة أخرى."
+    }
   }
 }

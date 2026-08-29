@@ -2,18 +2,12 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { SettingsToggles } from '@/components/settings-toggles'
 
 export default function DashboardPage() {
-  const t = useTranslations('common')
   const d = useTranslations('dashboard')
   return (
     <main className="mx-auto max-w-3xl px-6 py-20 sm:px-10">
-      <div className="mb-2 flex items-center justify-between gap-4">
-        <span className="text-sm font-medium tracking-wide text-ink-faint">{t('appName')}</span>
-        <SettingsToggles />
-      </div>
-      <h1 className="mt-2 font-serif text-4xl font-medium tracking-tight text-ink text-balance">
+      <h1 className="font-serif text-4xl font-medium tracking-tight text-ink text-balance">
         {d('welcome')}
       </h1>
       <Card className="mt-10 flex items-start gap-4">

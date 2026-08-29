@@ -71,7 +71,8 @@
     "submit": "Create organization",
     "inviteTitle": "You've been invited",
     "inviteBody": "{org} invited you to join as {role}.",
-    "acceptInvite": "Accept invitation"
+    "acceptInvite": "Accept invitation",
+    "inviteInvalid": "This invitation is invalid or has expired."
   },
   "dashboard": {
     "welcome": "You're in.",
@@ -141,6 +142,58 @@
     "language": "Language",
     "themeToDark": "Switch to dark mode",
     "themeToLight": "Switch to light mode",
-    "switchLanguage": "Switch language"
+    "switchLanguage": "Switch language",
+    "nav": {
+      "contracts": "Contracts",
+      "team": "Team",
+      "security": "Security",
+      "signOut": "Sign out"
+    }
+  },
+  "security": {
+    "title": "Security",
+    "devicesTitle": "Trusted devices",
+    "devicesEmpty": "No trusted devices.",
+    "unknownDevice": "Unknown device",
+    "lastActive": "Last active {date}",
+    "revoke": "Revoke",
+    "activityTitle": "Recent activity",
+    "activityEmpty": "No recent activity.",
+    "signedInAs": "Signed in as {email}",
+    "events": {
+      "login": "Signed in",
+      "code_sent": "Verification code sent",
+      "code_failed": "Verification code entered incorrectly",
+      "code_send_failed": "Verification code failed to send",
+      "device_trusted": "Device trusted",
+      "device_revoked": "Device access revoked",
+      "org_created": "Organization created",
+      "invite_created": "Team invitation sent",
+      "invite_accepted": "Team invitation accepted"
+    }
+  },
+  "team": {
+    "title": "Team",
+    "inviteTitle": "Invite a member",
+    "emailLabel": "Email",
+    "roleLabel": "Role",
+    "inviteCta": "Send invite",
+    "inviteSent": "Invitation sent.",
+    "membersTitle": "Members",
+    "you": "You",
+    "pendingTitle": "Pending invitations",
+    "cancelInvite": "Cancel",
+    "remove": "Remove",
+    "lastOwnerNotice": "Only owner — cannot be changed or removed",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "errors": {
+      "invalid_email": "Enter a valid email address.",
+      "not_authorized": "You don't have permission to do that.",
+      "unknown": "Something went wrong. Please try again."
+    }
   }
 }
