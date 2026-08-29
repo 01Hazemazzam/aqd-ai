@@ -223,18 +223,106 @@ codebase doesn't otherwise use) — flagged here instead as a "match the existin
 anyone adding the next `useTranslations` call.
 
 ### Model tier coverage (chat-specific — same caveat as Sub-project 3)
-🔴 **Known validation gap, not a claim of full coverage.** All live chat verification (streaming,
-citation click-through, NOT_FOUND) was performed with a temporary `AI_MODEL_MAIN` override to the
-`cheap`-tier alias (`gemini-flash-lite-latest`), the same free-tier-quota workaround used
-throughout Sub-project 3's round 1, because the `main`-tier model was already quota-exhausted at
-the time. The intended production `main` tier's chat behavior (streaming shape, citation quality,
-NOT_FOUND discipline under the actual production model) has **not** been independently verified.
+🔴 **Still a known validation gap, not a claim of full coverage.** Re-checked in QA pass 2 (below):
+`main` tier (`gemini-flash-latest` → resolved `gemini-3.7-flash`) was available at the very start
+of that pass — one direct call succeeded — but returned `429 RESOURCE_EXHAUSTED` on the next real
+call attempted seconds later, before any chat-specific `main`-tier verification could be done. This
+is the same unexplained quota behavior already on record above (quota exhausting far faster than
+the documented 20/day figure would suggest), now reproduced a second time on a different day. The
+rest of QA pass 2, like round 1, ran on the `cheap`-tier override
+(`AI_MODEL_MAIN=gemini-flash-lite-latest`, reverted afterward, dev server restarted back to
+defaults both times). `main` tier's actual chat behavior (streaming shape, citation quality,
+NOT_FOUND discipline, cross-language answer correctness) remains **not independently verified**.
 `heavy` tier (Anthropic) is out of scope for chat entirely — `streamGeminiText` explicitly throws
 if a tier resolves to a non-Gemini provider, since no Anthropic streaming implementation exists
 and no Anthropic key has ever been configured in this environment. Embedding generation
 (`embed.ts`, `gemini-embedding-001`) was exercised on whatever tier/quota was live at the time and
 is model-fixed (not tier-selectable), so this gap is specific to the *generation* step of chat,
 not retrieval.
+
+---
+
+## Sub-project 4 QA pass 2 — targeted chatbot validation
+
+Scope: cross-contract isolation, multi-clause citation correctness, the wrong-citation guard,
+ambiguous/irrelevant questions, Arabic/English/mixed-language grounding, and repeat-question
+stability. Ran against the three same-org QA fixtures (`QA-EN`, `QA-AR`, `QA-MIX` — all in
+"Walkthrough Test Org", the same org used for round-1's live click-through) via the actual running
+app in the browser, with every answer and citation cross-checked directly against Postgres, not
+just read off the rendered page.
+
+### Cross-contract isolation
+🟢 **Fixed test gap, verified two ways.** Round 1 only proved cross-*org* isolation
+(`match_clauses` returns nothing for a different org). It never proved cross-*contract* isolation
+within the *same* org, which is the boundary that actually matters day to day (one org, many
+contracts). Added a same-org second-contract fixture to
+`tests/chat/schema-integration.test.ts` and confirmed `match_clauses` never crosses the
+`contract_id` boundary even when the sibling contract's clause is the better semantic match for
+the query. Also confirmed live: asked `QA-EN`'s chat "What is the consulting fee in Kuwaiti
+dinars under this agreement?" — a fact that exists verbatim in the same org's `QA-AR` contract
+(25,000 KWD) but nowhere in `QA-EN` — and got `NOT_FOUND`, not the leaked figure.
+
+### Multi-clause questions and citation correctness
+🟢 **Verified live, English and Arabic.** "What are the payment terms, and does this agreement
+automatically renew?" against `QA-EN` correctly cited both `[3]` (Fees, real `clause_number` 5)
+and `[1]` (Automatic Renewal, real `clause_number` 4) — verified by joining the persisted
+`citations` rows back to `clauses`, not just by reading the rendered `[n]` markers. Same result in
+Arabic against `QA-AR` for a termination-notice + fee question: `[1]` → the termination clause,
+`[3]` → the fee clause, both correct.
+
+### Wrong-citation guard ("cannot persist a wrong citation")
+🟢 **Verified by extraction + unit test, not by trying to organically provoke the model.** The
+ordinal-range filter that drops any `[n]` outside the retrieved set already existed in `route.ts`
+but was inline and untested directly. Extracted it into `resolveCitations()`
+(`src/lib/ai/prompts.ts`) and unit-tested it directly: a hallucinated ordinal outside the retrieved
+range is dropped and never reaches the `citations` insert, a mix of one valid and one invalid
+ordinal keeps only the valid one, and a repeated valid ordinal dedupes to one row. This is a
+stronger guarantee than trying to get a live model to emit a bad citation on demand (unreliable to
+force, and a pass wouldn't prove the *next* run is also safe) — the range check is enforced in
+code regardless of what the model outputs.
+
+### Ambiguous / irrelevant questions
+🟢 **Verified live, English and Arabic.** "What data privacy or GDPR obligations does this
+agreement impose?" against `QA-EN` (no such clause) → `NOT_FOUND`. "هل يشمل هذا العقد شرط عدم
+المنافسة؟" (does this contract include a non-compete clause?) against `QA-AR` (no such clause) →
+`NOT_FOUND`. No guessing, no generic filler answer in either case.
+
+### Arabic / English / mixed-language grounding
+🟡 **One real bug found and fixed.** Arabic question against `QA-AR` (native-language fixture):
+correct, fully Arabic answer, no English leakage. Arabic question against `QA-MIX`'s English
+clause (data security measures): correctly retrieved the English clause and correctly answered in
+Arabic, matching the question's language. **English question against `QA-MIX`'s Arabic clause**
+(how long the Processor must retain/delete data): retrieval was correct (the right clause every
+time), but the answer came back in **Arabic**, mirroring the clause's language instead of the
+question's language — reproduced twice, not a one-off. `chatPrompt`'s existing instruction ("write
+your answer in the same language as the question") wasn't explicit enough about which language
+wins when the grounding clause is in a *different* language than the question. Fixed by naming the
+conflict directly in the prompt, with the exact failing case as a worked example. Re-verified live
+after the fix: the same English question against the same Arabic clause now gets a correct English
+answer that still cites the same clause. Regression-tested in `tests/ai/prompts.test.ts`.
+
+### Repeat-question stability
+🟢 **Facts and citations stable; exact wording varies slightly, as already documented for the
+analysis layer.** Same English question against `QA-EN`, asked twice: byte-identical answer text
+and identical citation mapping both times. Same Arabic question against `QA-AR`, asked twice:
+identical facts and identical citations (`[1]`/`[3]` → the same two clauses both times), with a
+trivial wording difference between runs ("والأتعاب..." vs "أما الأتعاب... فهي..." — same meaning,
+different connector). The `QA-MIX` cross-language question was also asked twice before the
+language fix and was stable in its own way — wrong (Arabic) both times, same wording both times —
+which helped confirm the bug was systematic rather than a one-off generation fluke.
+
+### New bug: `streamGeminiText` had no retry logic
+🟢 **Found while re-running the multi-clause question, fixed, regression-tested.** The very first
+live request in this pass failed outright with `429 RESOURCE_EXHAUSTED` and the client showed
+"Something went wrong answering that." Direct reproduction against the real API showed Google's
+own error body advertised a **~6 second** retry delay — a transient, recoverable throttle, not a
+hard stop. But `streamGeminiText` had no retry loop at all, unlike every other AI call path in the
+app (`aiComplete` retries retryable failures with exponential backoff). Fixed by adding a retry
+loop around the *initial* request only (`fetchStreamWithRetry` in `src/lib/ai/router.ts`) — once
+streaming has actually started and tokens may already be on their way to the client, a failure is
+not retried, matching the existing behavior for mid-stream errors. Regression-tested: retries a
+429 and streams normally once a later attempt succeeds, gives up after exhausting attempts on a
+persistent 429, and does not retry a non-retryable failure (e.g. 400).
 
 ---
 
@@ -259,6 +347,18 @@ not retrieval.
 - `tests/chat/schema-integration.test.ts` — real-embeddings semantic ranking via `match_clauses`,
   cross-org invisibility of matches, and RLS for chats/chat_messages/citations (create/read/insert,
   one-chat-per-contract, cross-org isolation)
+- `tests/chat/schema-integration.test.ts` — cross-contract isolation within the same org: a second
+  contract's clause is never returned by `match_clauses` for the first contract's id, even when it
+  is the better semantic match, and vice versa
+- `tests/ai/prompts.test.ts` — `resolveCitations` maps every valid ordinal to its real clause,
+  drops out-of-range/hallucinated ordinals (the "wrong citation can't persist" guarantee), handles
+  a mix of valid and invalid ordinals, and dedupes a repeated valid ordinal
+- `tests/ai/prompts.test.ts` — `chatPrompt` explicitly instructs answering in the question's
+  language even when the grounding clause is in a different language, with the exact failing case
+  (English question, Arabic clause) as a worked example
+- `tests/ai/router.test.ts` — `streamGeminiText` retries a retryable initial-request failure (429)
+  and streams normally on a later success, gives up after exhausting attempts on a persistent 429,
+  and does not retry a non-retryable failure
 
 Not regression-tested (impractical without live-model calls each run): the live model-quality
 findings themselves (false-positive rate, extraction accuracy, Arabic fluency). These are the

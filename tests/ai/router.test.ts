@@ -238,4 +238,42 @@ describe('streamGeminiText', () => {
   it('throws when the tier resolves to a non-Gemini provider', async () => {
     await expect(collect(streamGeminiText('heavy', 'sys', 'user'))).rejects.toMatchObject({ name: 'AiUpstreamError' })
   })
+
+  // A live chat request failed with a real 429 RESOURCE_EXHAUSTED that Google's own error body
+  // advertised a ~6s retry delay for -- but streamGeminiText had no retry loop at all (unlike
+  // aiComplete), so the user saw an immediate "something went wrong" instead of a transparent
+  // retry. This only retries the initial request, before any tokens have reached the client.
+  describe('retry on a transient failure before streaming starts', () => {
+    const originalRetryAttempts = process.env.AI_RETRY_ATTEMPTS
+    afterEach(() => {
+      if (originalRetryAttempts === undefined) delete process.env.AI_RETRY_ATTEMPTS
+      else process.env.AI_RETRY_ATTEMPTS = originalRetryAttempts
+    })
+
+    it('retries a 429 and streams normally once a later attempt succeeds', async () => {
+      process.env.AI_RETRY_ATTEMPTS = '3'
+      const body = 'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\r\n\r\n'
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }))
+        .mockResolvedValueOnce(sseStreamResponse(body))
+      const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
+      expect(chunks).toEqual(['ok'])
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    })
+
+    it('gives up after exhausting retry attempts on a persistent 429', async () => {
+      process.env.AI_RETRY_ATTEMPTS = '2'
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'still limited' }))
+      await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not retry a non-retryable failure (e.g. a blocked prompt reported as 400)', async () => {
+      process.env.AI_RETRY_ATTEMPTS = '4'
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(400, { error: 'bad request' }))
+      await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    })
+  })
 })

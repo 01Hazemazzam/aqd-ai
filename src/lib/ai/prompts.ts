@@ -93,7 +93,7 @@ Hard rules:
 - Answer only from the clause text given. Never use outside knowledge, never guess, never invent a fact.
 - Cite every factual claim with [n], where n is the bracketed number of the clause it came from. A claim with no supporting clause below must not be made at all.
 - If the clauses below do not contain the answer, respond with exactly this and nothing else: ${NOT_FOUND_TOKEN}
-- Write your answer in the same language as the question.
+- Write your answer in the same language as the question -- always, even when the clause you are citing is written in a different language than the question. Translate the fact into the question's language; do not switch to the clause's language just because that is the language you are quoting from. (Example: an English question grounded in an Arabic clause still gets an English answer.)
 - Do not fabricate a clause reference. Only use [n] values that appear in the numbered list below.
 - Plain text only -- no JSON, no markdown formatting.
 
@@ -105,6 +105,29 @@ ${renderRetrievedClauses(retrievedClauses)}`
 
 export function isNotFoundAnswer(text: string): boolean {
   return text.trim() === NOT_FOUND_TOKEN
+}
+
+export interface CitationMatch {
+  id: string
+  clauseNumber: string | null
+}
+
+export interface ResolvedCitation {
+  ordinal: number
+  clauseId: string
+  clauseNumber: string | null
+}
+
+// Maps every [n] marker found in the answer text to the retrieved clause it
+// actually points to. An ordinal outside 1..matches.length -- a
+// model-invented or otherwise wrong citation -- is dropped here, not
+// persisted: [n] can only ever mean "the nth clause actually shown to the
+// model this turn," never a clause the caller has to trust the model got
+// right on its own.
+export function resolveCitations(text: string, matches: CitationMatch[]): ResolvedCitation[] {
+  return extractCitationOrdinals(text)
+    .filter((n) => n >= 1 && n <= matches.length)
+    .map((n) => ({ ordinal: n, clauseId: matches[n - 1].id, clauseNumber: matches[n - 1].clauseNumber }))
 }
 
 // Matches [1], [2], etc. -- returns the unique set of 1-indexed positions

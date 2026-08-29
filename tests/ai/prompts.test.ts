@@ -10,6 +10,7 @@ import {
   chatPrompt,
   isNotFoundAnswer,
   extractCitationOrdinals,
+  resolveCitations,
 } from '@/lib/ai/prompts'
 
 describe('extractJson', () => {
@@ -112,6 +113,16 @@ describe('chatPrompt', () => {
     const { user } = chatPrompt('What is the governing law?', [])
     expect(user).toBe('What is the governing law?')
   })
+
+  // A live QA-MIX run asked an English question grounded only in an Arabic
+  // clause and got an Arabic answer back -- the model followed the clause's
+  // language instead of the question's. The instruction now says explicitly
+  // this must not happen, with the exact failing case as a worked example.
+  it('explicitly instructs answering in the question language even when the grounding clause is in a different language', () => {
+    const { system } = chatPrompt('q', [])
+    expect(system).toMatch(/even when the clause.*different language/i)
+    expect(system).toContain('an English question grounded in an Arabic clause still gets an English answer')
+  })
 })
 
 describe('isNotFoundAnswer', () => {
@@ -143,5 +154,51 @@ describe('extractCitationOrdinals', () => {
 
   it('deduplicates repeated citations', () => {
     expect(extractCitationOrdinals('[2] [2] [2]')).toEqual([2])
+  })
+})
+
+describe('resolveCitations', () => {
+  const matches = [
+    { id: 'clause-a', clauseNumber: '1' },
+    { id: 'clause-b', clauseNumber: '2' },
+    { id: 'clause-c', clauseNumber: null },
+  ]
+
+  it('maps every cited ordinal to the retrieved clause it actually refers to', () => {
+    expect(resolveCitations('Fees are due in 30 days [2]. Liability is capped [1].', matches)).toEqual([
+      { ordinal: 2, clauseId: 'clause-b', clauseNumber: '2' },
+      { ordinal: 1, clauseId: 'clause-a', clauseNumber: '1' },
+    ])
+  })
+
+  it('handles a clause with no document clause_number (retrieval-only ordinal)', () => {
+    expect(resolveCitations('See [3].', matches)).toEqual([{ ordinal: 3, clauseId: 'clause-c', clauseNumber: null }])
+  })
+
+  it('drops a wrong/hallucinated citation outside the retrieved range so it can never be persisted', () => {
+    // The model's answer text is otherwise correct, but [7] does not correspond to any of the
+    // 3 clauses actually retrieved for this question -- a wrong or invented citation. The system
+    // must silently drop it rather than insert a citations row pointing nowhere valid.
+    expect(resolveCitations('The term is twelve months [7].', matches)).toEqual([])
+  })
+
+  it('drops only the invalid ordinal in a mix of valid and wrong citations', () => {
+    expect(resolveCitations('Confirmed by [1] and also [99].', matches)).toEqual([
+      { ordinal: 1, clauseId: 'clause-a', clauseNumber: '1' },
+    ])
+  })
+
+  it('drops ordinal 0 and negative-looking ordinals', () => {
+    expect(resolveCitations('See [0].', matches)).toEqual([])
+  })
+
+  it('returns an empty array when the answer cites nothing', () => {
+    expect(resolveCitations('No supporting clause for this.', matches)).toEqual([])
+  })
+
+  it('deduplicates a repeated valid citation into a single resolved row', () => {
+    expect(resolveCitations('[1] and again [1].', matches)).toEqual([
+      { ordinal: 1, clauseId: 'clause-a', clauseNumber: '1' },
+    ])
   })
 })

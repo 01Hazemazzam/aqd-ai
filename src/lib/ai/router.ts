@@ -210,6 +210,40 @@ export interface StreamChunk {
   textDelta: string
 }
 
+// Retries only the initial request -- once a response starts streaming, a
+// partial answer may already be on its way to the client, so a mid-stream
+// failure is not retried here; it surfaces as-is to the caller, same as
+// before this retry loop existed.
+async function fetchStreamWithRetry(
+  url: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 4)
+  let lastError: AiUpstreamError | undefined
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      }),
+    })
+    if (response.ok && response.body) return response
+
+    const retryable = response.status === 429 || response.status >= 500
+    const err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable)
+    if (!retryable || attempt === attempts - 1) throw err
+    lastError = err
+    await sleep(2 ** attempt * 1000)
+  }
+  throw lastError
+}
+
 // Chat streaming is Gemini-only for now -- Anthropic's SSE event shape
 // (message_start/content_block_delta/...) is different enough from
 // Gemini's that supporting it isn't a small extension of this function, and
@@ -231,21 +265,9 @@ export async function* streamGeminiText(
 
   const fetchImpl = opts?.fetchImpl ?? fetch
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:streamGenerateContent?alt=sse`
-  const response = await fetchImpl(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    }),
-  })
+  const response = await fetchStreamWithRetry(url, apiKey, systemPrompt, userPrompt, fetchImpl)
 
-  if (!response.ok || !response.body) {
-    const retryable = response.status === 429 || response.status >= 500
-    throw new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable)
-  }
-
-  const reader = response.body.getReader()
+  const reader = response.body!.getReader() // fetchStreamWithRetry only ever returns a response with a body
   const decoder = new TextDecoder()
   let buffer = ''
 

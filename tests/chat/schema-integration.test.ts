@@ -25,6 +25,7 @@ let userA: string, userB: string
 let orgA: string, orgB: string
 let contractA: string, versionA: string
 let clauseTermination: string, clauseConfidentiality: string
+let contractA2: string, clauseA2Governing: string
 
 async function signedInClient(email: string) {
   const supabase = createClient(SUPABASE_URL, ANON_KEY)
@@ -92,6 +93,51 @@ beforeAll(async () => {
       clauses!.map((c, i) => a.from('clauses').update({ embedding: toPgVector(vectors[i]) }).eq('id', c.id)),
     )
   }
+
+  // A second contract in the SAME org (orgA), with a clause on a topic
+  // deliberately close to one in contractA (termination/notice periods) --
+  // the whole point of this fixture is to make cross-contract leakage
+  // plausible if match_clauses ever forgot its contract_id filter, not just
+  // theoretically possible.
+  const { data: contract2 } = await a
+    .from('contracts')
+    .insert({ org_id: orgA, title: 'Chat Test Contract 2', created_by: userA })
+    .select('id')
+    .single()
+  contractA2 = contract2!.id
+
+  const { data: file2 } = await a
+    .from('contract_files')
+    .insert({
+      contract_id: contractA2, org_id: orgA, storage_path: `${orgA}/${contractA2}/fake2.pdf`,
+      filename: 'fake2.pdf', mime_type: 'application/pdf', size_bytes: 10, checksum_sha256: 'chatabc2',
+    })
+    .select('id')
+    .single()
+
+  const { data: version2 } = await a
+    .from('contract_versions')
+    .insert({ contract_id: contractA2, org_id: orgA, file_id: file2!.id, version_no: 1 })
+    .select('id')
+    .single()
+
+  const bodies2 = [
+    'Governing Law. This Agreement is governed by the laws of the State of Delaware.',
+  ]
+  const { data: clauses2 } = await a
+    .from('clauses')
+    .insert(
+      bodies2.map((body, i) => ({ version_id: version2!.id, org_id: orgA, ordinal: i + 1, clause_number: String(i + 1), lang: 'en', body })),
+    )
+    .select('id, body')
+  clauseA2Governing = clauses2!.find((c) => c.body.startsWith('Governing'))!.id
+
+  if (hasKey) {
+    const vectors2 = await embedTexts(bodies2)
+    await Promise.all(
+      clauses2!.map((c, i) => a.from('clauses').update({ embedding: toPgVector(vectors2[i]) }).eq('id', c.id)),
+    )
+  }
 })
 
 afterAll(async () => {
@@ -122,6 +168,33 @@ describe.skipIf(!hasKey)('match_clauses (real embeddings)', () => {
       p_match_count: 5,
     })
     expect(matches).toHaveLength(0)
+  })
+
+  it('is contract-scoped within the same org: contract A never surfaces contract A2\'s clauses, and vice versa', async () => {
+    const a = await signedInClient(EMAIL_A)
+
+    // A question that would plausibly match contractA2's governing-law clause if match_clauses
+    // ever leaked across contracts within the same org -- asked against contractA's id.
+    const [governingLawVector] = await embedTexts(['What law governs this agreement?'])
+    const { data: matchesInA } = await a.rpc('match_clauses', {
+      p_contract_id: contractA,
+      p_query_embedding: toPgVector(governingLawVector),
+      p_match_count: 5,
+    })
+    expect(matchesInA?.map((m: { id: string }) => m.id)).not.toContain(clauseA2Governing)
+    expect(matchesInA?.every((m: { id: string }) => m.id === clauseTermination || m.id === clauseConfidentiality)).toBe(true)
+
+    // And the reverse: a termination-flavored question asked against contractA2's id must
+    // never surface contractA's termination clause, even though it's the best semantic match
+    // across the whole org.
+    const [terminationVector] = await embedTexts(['How can this contract be ended?'])
+    const { data: matchesInA2 } = await a.rpc('match_clauses', {
+      p_contract_id: contractA2,
+      p_query_embedding: toPgVector(terminationVector),
+      p_match_count: 5,
+    })
+    expect(matchesInA2?.map((m: { id: string }) => m.id)).not.toContain(clauseTermination)
+    expect(matchesInA2?.map((m: { id: string }) => m.id)).toEqual([clauseA2Governing])
   })
 })
 

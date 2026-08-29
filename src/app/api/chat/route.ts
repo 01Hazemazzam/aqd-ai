@@ -2,7 +2,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { embedTexts, toPgVector } from '@/lib/ai/embed'
 import { streamGeminiText, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
-import { chatPrompt, isNotFoundAnswer, extractCitationOrdinals, type RetrievedClause } from '@/lib/ai/prompts'
+import { chatPrompt, isNotFoundAnswer, resolveCitations, type RetrievedClause } from '@/lib/ai/prompts'
 
 const MATCH_COUNT = 6
 
@@ -60,24 +60,16 @@ export async function POST(request: Request) {
           .select('id')
           .single()
 
-        const citations: Array<{ ordinal: number; clauseId: string; clauseNumber: string | null }> = []
-        if (assistantMessage && !notFound) {
-          const ordinals = extractCitationOrdinals(content)
-          const rows = ordinals
-            .filter((n) => n >= 1 && n <= matches.length)
-            .map((n) => ({
-              message_id: assistantMessage.id,
+        const citations = assistantMessage && !notFound ? resolveCitations(content, matches) : []
+        if (citations.length) {
+          await supabase.from('citations').insert(
+            citations.map((c) => ({
+              message_id: assistantMessage!.id,
               org_id: orgId,
-              clause_id: matches[n - 1].id,
-              ordinal: n,
-            }))
-          if (rows.length) {
-            await supabase.from('citations').insert(rows)
-            for (const row of rows) {
-              const match = matches.find((m) => m.id === row.clause_id)
-              citations.push({ ordinal: row.ordinal, clauseId: row.clause_id, clauseNumber: match?.clauseNumber ?? null })
-            }
-          }
+              clause_id: c.clauseId,
+              ordinal: c.ordinal,
+            })),
+          )
         }
 
         send('done', { messageId: assistantMessage?.id ?? null, citations, notFound })
