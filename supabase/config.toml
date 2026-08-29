@@ -337,6 +337,17 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+# DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+# Left blank client_id/secret (see .env.local) means GoTrue's own /authorize
+# endpoint rejects the attempt -- the callback route below turns that into the
+# same "isn't configured yet" message this codebase already uses for AI keys
+# and RESEND_API_KEY, rather than a crash. `enabled = true` here is safe even
+# with no real credentials configured.
+
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.
 [auth.web3.solana]

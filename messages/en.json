@@ -10,7 +10,10 @@
       "password": "Password",
       "submit": "Create account",
       "haveAccount": "Already have an account?",
-      "signIn": "Sign in"
+      "signIn": "Sign in",
+      "continueWithGoogle": "Continue with Google",
+      "orDivider": "or",
+      "googleNotConfigured": "Google sign-in isn't configured yet."
     },
     "verify": {
       "title": "Check your email",
@@ -28,7 +31,10 @@
       "submit": "Sign in",
       "forgot": "Forgot your password?",
       "noAccount": "No account yet?",
-      "signUp": "Create one"
+      "signUp": "Create one",
+      "continueWithGoogle": "Continue with Google",
+      "orDivider": "or",
+      "googleNotConfigured": "Google sign-in isn't configured yet."
     },
     "challenge": {
       "title": "Verify this device",
@@ -61,7 +67,8 @@
       "codeExpired": "That code has expired. Request a new one.",
       "codeBurned": "Too many attempts. Request a new code.",
       "rateLimited": "Too many requests. Try again in an hour.",
-      "unknown": "Something went wrong. Please try again."
+      "unknown": "Something went wrong. Please try again.",
+      "oauthFailed": "Google sign-in didn't work. Please try again or use your email and password."
     }
   },
   "onboarding": {

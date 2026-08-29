@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { GoogleButton } from '@/components/auth/google-button'
 import { signUp } from './actions'
 
 export default function SignupPage() {
@@ -14,6 +15,12 @@ export default function SignupPage() {
 
   return (
     <AuthShell title={t('title')} subtitle={t('subtitle')}>
+      <GoogleButton label={t('continueWithGoogle')} notConfiguredLabel={t('googleNotConfigured')} />
+      <div className="my-5 flex items-center gap-3 text-xs text-ink-dim">
+        <span className="h-px flex-1 bg-edge" />
+        {t('orDivider')}
+        <span className="h-px flex-1 bg-edge" />
+      </div>
       <form action={action} className="flex flex-col gap-4">
         <Input
           label={t('email')} name="email" type="email" required autoComplete="email"
