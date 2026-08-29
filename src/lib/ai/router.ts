@@ -10,12 +10,18 @@ export class AiDisabledError extends Error {
 
 // retryable=false marks a failure retrying can't fix (bad request, content
 // blocked, truncated JSON) so the caller doesn't burn attempts on it.
+// status carries the real HTTP status (when there was an HTTP response at
+// all -- a blocked prompt or empty candidate has none) so a caller can tell
+// "quota exhausted" (429) apart from every other failure without parsing the
+// message string; analyze-actions.ts's error classification depends on this.
 export class AiUpstreamError extends Error {
   retryable: boolean
-  constructor(message: string, retryable = true) {
+  status?: number
+  constructor(message: string, retryable = true, status?: number) {
     super(message)
     this.name = 'AiUpstreamError'
     this.retryable = retryable
+    this.status = status
   }
 }
 
@@ -96,7 +102,7 @@ export async function callAnthropic(
 
   if (!response.ok) {
     const retryable = response.status === 429 || response.status >= 500
-    throw new AiUpstreamError(`Anthropic ${response.status}: ${await response.text()}`, retryable)
+    throw new AiUpstreamError(`Anthropic ${response.status}: ${await response.text()}`, retryable, response.status)
   }
 
   const body = await response.json()
@@ -140,7 +146,7 @@ export async function callGemini(
 
   if (!response.ok) {
     const retryable = response.status === 429 || response.status >= 500
-    throw new AiUpstreamError(`Gemini ${response.status}: ${await response.text()}`, retryable)
+    throw new AiUpstreamError(`Gemini ${response.status}: ${await response.text()}`, retryable, response.status)
   }
 
   const body = await response.json()
@@ -236,7 +242,7 @@ async function fetchStreamWithRetry(
     if (response.ok && response.body) return response
 
     const retryable = response.status === 429 || response.status >= 500
-    const err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable)
+    const err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable, response.status)
     if (!retryable || attempt === attempts - 1) throw err
     lastError = err
     await sleep(2 ** attempt * 1000)

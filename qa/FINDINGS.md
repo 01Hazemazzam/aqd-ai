@@ -533,3 +533,86 @@ Not regression-tested (impractical without live-model calls each run): the live 
 findings themselves (false-positive rate, extraction accuracy, Arabic fluency). These are the
 kind of thing `qa/fixtures/*.json` + `qa/seed-fixture.mjs` exist for — re-run by hand against a
 real key when the prompts or playbook change materially, not on every CI run.
+
+---
+
+## User-reported "analysis pipeline is broken" + PDF extraction defects — investigated to root cause
+
+Reported against a new fixture, `Aqd_AI_Advanced_Contract_Test.pdf` (28 clauses, English with one
+deliberately Arabic clause), now committed at `tests/fixtures/advanced-contract-test.pdf`. Root-cause
+investigation traced the full path (contract → `analyzeContract` → environment → Gemini request →
+response → parsing → DB write → UI) with hard evidence at every step before any fix, per explicit
+instruction not to guess or patch symptoms.
+
+🟢 **Analysis pipeline: not broken — genuine `main`-tier quota exhaustion, hidden behind a generic
+error.** A direct, minimal request to `gemini-flash-latest` (the `main` tier's default, unmodified —
+no stale `.env.local` override was present) using the app's real `GEMINI_API_KEY` returned a real
+`HTTP 429 RESOURCE_EXHAUSTED` ("Quota exceeded ... limit: 20, model: gemini-3.7-flash"), while the
+same key against the `cheap` tier returned `200 OK`. This is the same free-tier 20-requests/day
+limit already documented in the Sub-project 3 section above, now hit again days later — Google's
+quota, not an Aqd defect. The real defect: `analyzeContract` (`analyze-actions.ts`) collapsed every
+non-`ai_disabled` task failure into a single generic `'unknown'` code, which the UI rendered as
+"Something went wrong during analysis. Please try again." — indistinguishable from an actual bug,
+even though the real classification (429) was already being logged server-side
+(`console.error('[analyzeContract] task "X" failed:', ...)`, never swallowed). Fixed by carrying
+the real HTTP status through `AiUpstreamError` (`router.ts`) into a new `quota_exceeded` UI error
+code (`classify-error.ts`). **Verified live, full path, both failure and success:** uploaded the
+real fixture through the running app, clicked Analyze — UI showed the new, specific
+"The AI provider's daily quota is exhausted for this model..." message; `analyses.error` persisted
+as `'quota_exceeded'` in the DB; server console showed the real `Gemini 429: {...}` body for all
+four tasks, not swallowed. Then, with `AI_MODEL_MAIN` overridden to the `cheap` model as a
+**process-only** env var (never written to `.env.local` — confirmed zero residue afterward) and the
+dev server restarted, re-analyzed the same contract: `analyses.status` reached `'ready'`, summary/
+fields/obligations all populated with accurate real data citing correct clause numbers, and
+`usage_events` logged the actually-resolved model (`gemini-3.5-flash-lite`) per task. ⚪ The `risks`
+task completed successfully but returned zero findings for this specific fixture on the cheap tier
+(5 output tokens, i.e. an empty array) — plausible for a contract with no deliberately-planted
+risks, not investigated further as it wasn't the reported defect; flagged here rather than silently
+assumed fine.
+
+🟢 **PDF header/footer contamination — fixed, general fix, not fixture-specific.** unpdf's merged
+text extraction (`mergePages: true`) has no page-boundary markers, so this PDF's running header/
+footer ("Aqd AI synthetic QA contract - testing only Page N") got interleaved into whichever clause
+was open at each page break — confirmed via the real production `parseDocument`, not inspection:
+Clause 8 ended "...until service is restored.\nAqd AI synthetic QA contract - testing only Page
+2\nFor Severity 2 incidents...". Fixed in `parse.ts` by extracting per-page (`mergePages: false`)
+and stripping lines that repeat, modulo a page number, across nearly every page — detected
+structurally (near the top/bottom of a page, present on `pages.length - 1`+ pages) rather than by
+matching this fixture's specific text, so the fix holds for any document's own header/footer, not
+just this one. Verified the fix doesn't over-strip: the closing disclaimer ("Synthetic QA document
+- for testing Aqd AI only...", appearing once, only on the last page) survives correctly. Live-
+verified in the running app: all 28 clauses render with zero footer contamination.
+
+⚪ **Arabic Clause 27 body — confirmed as a source-PDF defect, not an Aqd parsing bug, and left
+unfixed because it cannot be fixed at the parsing layer.** Direct inspection of pdf.js's own
+per-page `getTextContent()` (not just unpdf's wrapper) shows **zero text items** for the entire
+Arabic sentence — it occupies real visual space in the rendered page but was never encoded as
+selectable text in the PDF's content stream (consistent with some PDF generators rendering
+complex-script runs as vector outlines rather than embedding them as real text when they can't
+guarantee correct shaping/embedding). unpdf/pdf.js already auto-resolves `cMapUrl`/
+`standardFontDataUrl` by default, ruling out a missing-CMap misconfiguration. No text-layer
+extraction library — unpdf, pdf.js, or any other — can recover text that was never encoded as text.
+Clause 27 still segments correctly (heading + English caption), just without the unrecoverable
+Arabic body. Regression-tested as current, correct, asserted behavior (not a gap expected to close)
+so a future library upgrade that changes this is visible via a failing test, not silently absorbed.
+
+🟢 **OTP/email verification — confirmed working end to end; the reported "not receiving email" is
+expected local-dev behavior, not a bug.** `RESEND_API_KEY` is unset in `.env.local` (no email
+provider configured), so `sendCodeEmail` correctly takes its documented dev-mode fallback: no real
+email is sent, and the code is shown directly on the verify screen ("Dev — no email is sent
+locally. Your code is ..."), exactly as `src/lib/auth/dev-code.ts` was built to do. Live-verified
+the complete path with a fresh signup: code generated → `issue_code` stored it → dev fallback
+displayed it on-screen → entered it → `verify_code` accepted it → `email_confirmed_at` set →
+redirected to onboarding. No code change needed; this is the intended behavior without a
+configured email provider, matching the existing "AI disabled" / "no key configured" pattern
+elsewhere in this codebase. Real-email delivery via a configured `RESEND_API_KEY` remains untested
+(no Resend key available in this environment) — tracked as an open item, same shape as the
+untested `main`/`heavy` AI tiers.
+
+**Regression tests added:**
+- `tests/ai/classify-error.test.ts` — `mapTaskError` correctly classifies a real 429
+  (`upstreamStatus: 429`), a missing key (`disabled: true`), and a non-retryable non-quota error
+  (neither); `classifyAnalysisError` prioritizes `ai_disabled` > `quota_exceeded` > `unknown`
+- `tests/ingest/advanced-contract-test.test.ts` — the real fixture segments into all 28 clauses
+  with zero header/footer contamination; the one-off closing disclaimer survives; Clause 27 still
+  exists with its (unrecoverable) Arabic body documented as expected, not silently regressed

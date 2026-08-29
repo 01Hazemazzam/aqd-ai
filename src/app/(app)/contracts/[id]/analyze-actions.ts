@@ -4,6 +4,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { sha256Hex } from '@/lib/ingest/checksum'
 import { aiComplete, type Tier } from '@/lib/ai/router'
+import { classifyAnalysisError, mapTaskError, type TaskErrorInfo } from '@/lib/ai/classify-error'
 import {
   summaryPrompt,
   fieldsPrompt,
@@ -34,11 +35,20 @@ type RisksOutput = { findings: RiskFinding[] }
 type Obligation = { clauseId: string | null; obligor: string; action: string; due: string | null }
 type ObligationsOutput = { obligations: Obligation[] }
 
-interface TaskRun<T> {
+// Preserved per-failure (not just logged) so a total failure across all four
+// tasks can report *why* (quota exhausted vs. no key vs. something else)
+// instead of collapsing every non-disabled failure into one generic
+// "unknown" the UI can't distinguish from a real bug -- the gap that made a
+// genuine, provable 429 quota exhaustion render as "something went wrong."
+interface TaskRun<T> extends TaskErrorInfo {
   ok: boolean
   data: T | null
 }
 
+// Not exported: a 'use server' file's exports must all be async functions
+// usable as Server Actions, and this is an internal helper with a
+// non-serializable (function) parameter -- classification logic that needs
+// direct unit coverage lives in classify-error.ts instead.
 async function runTask<T>(
   task: string,
   tier: Tier,
@@ -60,7 +70,7 @@ async function runTask<T>(
     // fails, this is the only record of why. Logged, not thrown: one
     // failed task must never take the other three down.
     console.error(`[analyzeContract] task "${task}" failed:`, err instanceof Error ? err.message : err)
-    return { ok: false, data: null }
+    return { ok: false, data: null, ...mapTaskError(err) }
   }
 }
 
@@ -135,12 +145,9 @@ export async function analyzeContract(contractId: string) {
   ])
 
   if (!summaryRun.ok && !fieldsRun.ok && !risksRun.ok && !obligationsRun.ok) {
-    const disabled = !process.env.ANTHROPIC_API_KEY && !process.env.GEMINI_API_KEY
-    await supabase
-      .from('analyses')
-      .update({ status: 'failed', error: disabled ? 'ai_disabled' : 'unknown' })
-      .eq('id', analysisId)
-    return { error: disabled ? ('ai_disabled' as const) : ('unknown' as const) }
+    const errorCode = classifyAnalysisError([summaryRun, fieldsRun, risksRun, obligationsRun])
+    await supabase.from('analyses').update({ status: 'failed', error: errorCode }).eq('id', analysisId)
+    return { error: errorCode }
   }
 
   const validClauseIds = new Set(clauseRows.map((c) => c.id))
