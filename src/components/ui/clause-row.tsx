@@ -17,7 +17,15 @@ export function ClauseRow({ id, number, heading, body, severity = 'none', dir }:
   dir?: 'ltr' | 'rtl'
 }) {
   return (
-    <article id={id} dir={dir} className="relative flex gap-3 rounded-xl border border-edge bg-surface-2 p-4">
+    <article
+      id={id}
+      dir={dir}
+      className={cn(
+        'relative flex gap-3 rounded-xl border border-edge bg-surface-2 p-4 shadow-sm',
+        'transition-[box-shadow,border-color] duration-[var(--duration-base)] ease-[var(--ease-out)]',
+        'hover:border-edge hover:shadow-md',
+      )}
+    >
       {/* `start-0` is Tailwind's logical inset-inline-start, so the gutter
           mirrors in RTL with no second rule and no physical property. */}
       <span aria-hidden="true" className={cn('absolute start-0 top-4 bottom-4 w-[3px] rounded-full', GUTTER[severity])} />

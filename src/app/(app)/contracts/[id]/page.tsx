@@ -1,14 +1,38 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import {
+  ArrowLeft,
+  FileWarning,
+  AlertTriangle,
+  Sparkles,
+  LayoutList,
+  ClipboardList,
+  TriangleAlert,
+  Users,
+  CalendarDays,
+  Clock,
+  Scale,
+  Wallet,
+} from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { ClauseRow } from '@/components/ui/clause-row'
 import { Card } from '@/components/ui/card'
+import { SkeletonText, Skeleton } from '@/components/ui/skeleton'
+import { FadeIn, StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { AnalyzeButton } from './analyze-button'
 import { ChatPanel } from './chat-panel'
 import { buildChatHistory } from '@/lib/chat/build-history'
 
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
+
+const FIELD_ICON = {
+  parties: Users,
+  effectiveDate: CalendarDays,
+  termLength: Clock,
+  governingLaw: Scale,
+  totalValue: Wallet,
+} as const
 
 export default async function ContractReaderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -70,10 +94,11 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-20 sm:px-10">
-      <Link href="/contracts" className="mb-6 inline-block text-sm text-accent underline">
+      <Link href="/contracts" className="mb-6 inline-flex items-center gap-1.5 text-sm text-accent hover:underline">
+        <ArrowLeft size={15} aria-hidden="true" className="rtl:rotate-180" />
         {t('backToList')}
       </Link>
-      <div className="mb-8 flex items-center justify-between gap-4">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-serif text-3xl font-medium tracking-tight text-ink text-balance">{contract.title}</h1>
         {contract.status === 'ready' && !!clauses?.length && (
           <AnalyzeButton contractId={id} label={analysis ? t('reanalyzeCta') : t('analyzeCta')} />
@@ -81,19 +106,41 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
       </div>
 
       {contract.status !== 'ready' && contract.status !== 'failed' && (
-        <Card><p className="text-sm text-ink-dim">{t('status.parsing')}</p></Card>
+        <Card className="mb-6">
+          <div className="mb-4 flex items-center gap-2 text-sm font-medium text-ink-dim">
+            <span className="skeleton h-2 w-2 shrink-0 rounded-full" aria-hidden="true" />
+            {t('status.parsing')}
+          </div>
+          <SkeletonText lines={4} />
+        </Card>
       )}
 
       {contract.status === 'failed' && (
-        <Card><p role="alert" className="text-sm text-risk-high">{t('parseFailed')}</p></Card>
+        <Card className="mb-6 flex items-start gap-3">
+          <FileWarning size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-risk-high" />
+          <p role="alert" className="text-sm text-risk-high">{t('parseFailed')}</p>
+        </Card>
       )}
 
       {analysis?.status === 'pending' && (
-        <Card className="mb-6"><p className="text-sm text-ink-dim">{t('analyzing')}</p></Card>
+        <div className="mb-8 flex flex-col gap-4">
+          <Card>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+              <Sparkles size={15} aria-hidden="true" className="text-accent" />
+              {t('analyzing')}
+            </div>
+            <SkeletonText lines={3} />
+          </Card>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Card><Skeleton className="h-24 w-full" /></Card>
+            <Card><Skeleton className="h-24 w-full" /></Card>
+          </div>
+        </div>
       )}
 
       {analysis?.status === 'failed' && (
-        <Card className="mb-6">
+        <Card className="mb-6 flex items-start gap-3">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-risk-high" />
           <p role="alert" className="text-sm text-risk-high">
             {t(`analyzeErrors.${analysis.error}` as 'analyzeErrors.unknown')}
           </p>
@@ -101,37 +148,53 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
       )}
 
       {analysis?.status === 'ready' && analysis.error === 'partial' && (
-        <Card className="mb-6">
+        <Card className="mb-6 flex items-start gap-3">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-risk-high" />
           <p role="status" className="text-sm text-risk-high">{t('partialAnalysisNotice')}</p>
         </Card>
       )}
 
       {analysis?.status === 'ready' && (
-        <div className="mb-8 flex flex-col gap-4">
+        <FadeIn className="mb-8 flex flex-col gap-4">
           {analysis.summary && (
             <Card>
-              <h2 className="mb-2 text-sm font-semibold text-ink">{t('summaryTitle')}</h2>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+                <Sparkles size={15} aria-hidden="true" className="text-accent" />
+                {t('summaryTitle')}
+              </h2>
               <p className="text-sm leading-relaxed text-ink-dim">{analysis.summary}</p>
             </Card>
           )}
 
           {fields && (
             <Card>
-              <h2 className="mb-3 text-sm font-semibold text-ink">{t('fieldsTitle')}</h2>
-              <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                {Object.entries(fields).map(([key, value]) => (
-                  <div key={key}>
-                    <dt className="text-ink-faint">{t(`fieldLabels.${key}` as 'fieldLabels.parties')}</dt>
-                    <dd className="text-ink-dim">{Array.isArray(value) ? value.join(', ') || '—' : value ?? '—'}</dd>
-                  </div>
-                ))}
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                <LayoutList size={15} aria-hidden="true" className="text-accent" />
+                {t('fieldsTitle')}
+              </h2>
+              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                {Object.entries(fields).map(([key, value]) => {
+                  const Icon = FIELD_ICON[key as keyof typeof FIELD_ICON]
+                  return (
+                    <div key={key} className="flex items-start gap-2.5">
+                      {Icon && <Icon size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-faint" />}
+                      <div>
+                        <dt className="text-ink-faint">{t(`fieldLabels.${key}` as 'fieldLabels.parties')}</dt>
+                        <dd className="text-ink-dim">{Array.isArray(value) ? value.join(', ') || '—' : value ?? '—'}</dd>
+                      </div>
+                    </div>
+                  )
+                })}
               </dl>
             </Card>
           )}
 
           {obligations.length > 0 && (
             <Card>
-              <h2 className="mb-3 text-sm font-semibold text-ink">{t('obligationsTitle')}</h2>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                <ClipboardList size={15} aria-hidden="true" className="text-accent" />
+                {t('obligationsTitle')}
+              </h2>
               <ul className="flex flex-col gap-2 text-sm">
                 {obligations.map((o, i) => (
                   <li key={i} className="text-ink-dim">
@@ -145,7 +208,10 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
 
           {unplacedFindings.length > 0 && (
             <Card>
-              <h2 className="mb-3 text-sm font-semibold text-ink">{t('generalFindingsTitle')}</h2>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                <TriangleAlert size={15} aria-hidden="true" className="text-risk-high" />
+                {t('generalFindingsTitle')}
+              </h2>
               <ul className="flex flex-col gap-2 text-sm">
                 {unplacedFindings.map((f) => (
                   <li key={f.id} role="alert" className="text-ink-dim">
@@ -155,23 +221,24 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
               </ul>
             </Card>
           )}
-        </div>
+        </FadeIn>
       )}
 
       {contract.status === 'ready' && !!clauses?.length && (
-        <div className="flex flex-col gap-3">
+        <StaggerList className="flex flex-col gap-3">
           {clauses.map((clause) => (
-            <ClauseRow
-              key={clause.id}
-              id={`clause-${clause.id}`}
-              number={clause.clause_number ?? String(clause.ordinal)}
-              heading={clause.clause_number ? t('clauseHeading', { number: clause.clause_number }) : t('untitledClause')}
-              body={clause.body}
-              dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
-              severity={severityByClause.get(clause.id) ?? 'none'}
-            />
+            <StaggerItem key={clause.id}>
+              <ClauseRow
+                id={`clause-${clause.id}`}
+                number={clause.clause_number ?? String(clause.ordinal)}
+                heading={clause.clause_number ? t('clauseHeading', { number: clause.clause_number }) : t('untitledClause')}
+                body={clause.body}
+                dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
+                severity={severityByClause.get(clause.id) ?? 'none'}
+              />
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerList>
       )}
 
       {contract.status === 'ready' && !clauses?.length && (

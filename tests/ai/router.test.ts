@@ -25,6 +25,8 @@ describe('callAnthropic', () => {
     )
     const result = await callAnthropic(ANTHROPIC_SPEC, 'key', 'sys', 'user', fetchImpl)
     expect(result.text).toBe('{"summary":"hi"}')
+    expect(result.provider).toBe('anthropic')
+    expect(result.requestedModel).toBe(ANTHROPIC_SPEC.model)
     expect(result.inputTokens).toBe(1000)
     expect(result.outputTokens).toBe(500)
     expect(result.costUsd).toBeCloseTo(1000 / 1_000_000 * 3 + 500 / 1_000_000 * 15)
@@ -59,11 +61,17 @@ describe('callAnthropic', () => {
     })
   })
 
-  it('throws retryable on a 429', async () => {
+  // Every real 429 this app has hit (Gemini, at least -- see qa/FINDINGS.md)
+  // has been a hard free-tier DAILY quota, not a transient rate limit --
+  // confirmed live by a retry immediately failing with the identical 429
+  // again. Retryable is reserved for 5xx now; a 429 skips straight to
+  // whatever fallback exists instead of wasting up to 15s of backoff on a
+  // retry that has never once succeeded.
+  it('throws non-retryable on a 429 (daily quota exhaustion, not a transient limit)', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'rate limited' }))
     const err = await callAnthropic(ANTHROPIC_SPEC, 'key', 'sys', 'user', fetchImpl).catch((e) => e)
     expect(err).toBeInstanceOf(AiUpstreamError)
-    expect(err.retryable).toBe(true)
+    expect(err.retryable).toBe(false)
   })
 
   it('throws non-retryable on a 400', async () => {
@@ -83,6 +91,8 @@ describe('callGemini', () => {
     )
     const result = await callGemini(GEMINI_SPEC, 'key', 'sys', 'user', fetchImpl)
     expect(result.text).toBe('{"summary":"hi"}')
+    expect(result.provider).toBe('gemini')
+    expect(result.requestedModel).toBe(GEMINI_SPEC.model)
     expect(result.inputTokens).toBe(200)
     expect(result.outputTokens).toBe(80)
   })
@@ -129,6 +139,8 @@ describe('callOpenRouter', () => {
     )
     const result = await callOpenRouter(spec, 'key', 'sys', 'user', fetchImpl)
     expect(result.text).toBe('ok')
+    expect(result.provider).toBe('openrouter')
+    expect(result.requestedModel).toBe(spec.model)
     expect(result.inputTokens).toBe(50)
     expect(result.outputTokens).toBe(10)
     expect(result.costUsd).toBe(0)
@@ -153,11 +165,15 @@ describe('aiComplete', () => {
   const originalGeminiKey = process.env.GEMINI_API_KEY
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY
   const originalRetryAttempts = process.env.AI_RETRY_ATTEMPTS
+  const originalForceProvider = process.env.AI_FORCE_PROVIDER
+  const originalFallbackEnabled = process.env.AI_FALLBACK_ENABLED
 
   beforeEach(() => {
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.GEMINI_API_KEY
     delete process.env.OPENROUTER_API_KEY
+    delete process.env.AI_FORCE_PROVIDER
+    delete process.env.AI_FALLBACK_ENABLED
   })
   afterEach(() => {
     if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY
@@ -168,6 +184,10 @@ describe('aiComplete', () => {
     else process.env.OPENROUTER_API_KEY = originalOpenRouterKey
     if (originalRetryAttempts === undefined) delete process.env.AI_RETRY_ATTEMPTS
     else process.env.AI_RETRY_ATTEMPTS = originalRetryAttempts
+    if (originalForceProvider === undefined) delete process.env.AI_FORCE_PROVIDER
+    else process.env.AI_FORCE_PROVIDER = originalForceProvider
+    if (originalFallbackEnabled === undefined) delete process.env.AI_FALLBACK_ENABLED
+    else process.env.AI_FALLBACK_ENABLED = originalFallbackEnabled
   })
 
   it('throws AiDisabledError when no key is configured for the tier', async () => {
@@ -207,6 +227,14 @@ describe('aiComplete', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
+  it('does not retry a 429 either -- fails on the first attempt instead of backing off', async () => {
+    process.env.GEMINI_API_KEY = 'test-key'
+    process.env.AI_RETRY_ATTEMPTS = '4'
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
+    await expect(aiComplete('main', 'sys', 'user', { fetchImpl })).rejects.toBeInstanceOf(AiUpstreamError)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   // The three tests below cover the actual fix for the tracked Gemini
   // free-tier quota ceiling: prefer Gemini/Anthropic while they're healthy,
   // fall back to OpenRouter only when they're not -- and only when
@@ -227,10 +255,10 @@ describe('aiComplete', () => {
       expect(fetchImpl.mock.calls[0][0]).not.toContain('openrouter')
     })
 
-    it('falls back to OpenRouter after the primary exhausts its own retries on a persistent 429', async () => {
+    it('falls back to OpenRouter immediately on a 429, without retrying Gemini first', async () => {
       process.env.GEMINI_API_KEY = 'test-key'
       process.env.OPENROUTER_API_KEY = 'or-key'
-      process.env.AI_RETRY_ATTEMPTS = '2'
+      process.env.AI_RETRY_ATTEMPTS = '4' // high on purpose -- proves retryable=false skips backoff, not just a low cap
       const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
         if (typeof url === 'string' && url.includes('openrouter.ai')) {
           return jsonResponse(200, { choices: [{ message: { content: 'fallback answer' } }], usage: {} })
@@ -239,7 +267,23 @@ describe('aiComplete', () => {
       })
       const result = await aiComplete('main', 'sys', 'user', { fetchImpl })
       expect(result.text).toBe('fallback answer')
-      // 2 Gemini attempts (both 429, exhausting AI_RETRY_ATTEMPTS) + 1 OpenRouter call.
+      // 1 Gemini attempt (429, not retried) + 1 OpenRouter call.
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    })
+
+    it('still retries a genuinely transient 500 before falling back', async () => {
+      process.env.GEMINI_API_KEY = 'test-key'
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_RETRY_ATTEMPTS = '2'
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('openrouter.ai')) {
+          return jsonResponse(200, { choices: [{ message: { content: 'fallback answer' } }], usage: {} })
+        }
+        return jsonResponse(500, { error: 'upstream down' })
+      })
+      const result = await aiComplete('main', 'sys', 'user', { fetchImpl })
+      expect(result.text).toBe('fallback answer')
+      // 2 Gemini attempts (both 500, exhausting AI_RETRY_ATTEMPTS) + 1 OpenRouter call.
       expect(fetchImpl).toHaveBeenCalledTimes(3)
     })
 
@@ -265,6 +309,64 @@ describe('aiComplete', () => {
       await expect(aiComplete('main', 'sys', 'user')).rejects.toBeInstanceOf(AiDisabledError)
     })
   })
+
+  // AI_FALLBACK_ENABLED=false: a QA run validating Gemini's own behavior
+  // needs to see its real failure, not have OpenRouter silently mask it.
+  describe('AI_FALLBACK_ENABLED=false', () => {
+    it('does not fall back to OpenRouter even though a key is configured', async () => {
+      process.env.GEMINI_API_KEY = 'test-key'
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_FALLBACK_ENABLED = 'false'
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
+      const err = await aiComplete('main', 'sys', 'user', { fetchImpl }).catch((e) => e)
+      expect(err).toBeInstanceOf(AiUpstreamError)
+      expect(err.message).toContain('Gemini 429')
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+      expect(fetchImpl.mock.calls.every(([url]) => !String(url).includes('openrouter'))).toBe(true)
+    })
+
+    it('any other value leaves fallback on (only the literal string "false" disables it)', async () => {
+      process.env.GEMINI_API_KEY = 'test-key'
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_FALLBACK_ENABLED = 'no'
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('openrouter.ai')) {
+          return jsonResponse(200, { choices: [{ message: { content: 'fallback answer' } }], usage: {} })
+        }
+        return jsonResponse(429, { error: 'quota exceeded' })
+      })
+      const result = await aiComplete('main', 'sys', 'user', { fetchImpl })
+      expect(result.text).toBe('fallback answer')
+    })
+  })
+
+  // AI_FORCE_PROVIDER=openrouter: explicit developer selection, for proving
+  // the OpenRouter path works without needing a real Gemini outage.
+  describe('AI_FORCE_PROVIDER=openrouter', () => {
+    it('routes straight to OpenRouter, skipping Gemini entirely even though it would have succeeded', async () => {
+      process.env.GEMINI_API_KEY = 'test-key'
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_FORCE_PROVIDER = 'openrouter'
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('openrouter.ai')) {
+          return jsonResponse(200, { choices: [{ message: { content: 'openrouter answer' } }], usage: { prompt_tokens: 3, completion_tokens: 2 } })
+        }
+        throw new Error('should never call Gemini when a provider is forced')
+      })
+      const result = await aiComplete('main', 'sys', 'user', { fetchImpl })
+      expect(result.text).toBe('openrouter answer')
+      expect(result.provider).toBe('openrouter')
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws AiDisabledError when forced to OpenRouter without an OpenRouter key, even though Gemini has one', async () => {
+      process.env.GEMINI_API_KEY = 'test-key'
+      process.env.AI_FORCE_PROVIDER = 'openrouter'
+      const fetchImpl = vi.fn()
+      await expect(aiComplete('main', 'sys', 'user', { fetchImpl })).rejects.toBeInstanceOf(AiDisabledError)
+      expect(fetchImpl).not.toHaveBeenCalled()
+    })
+  })
 })
 
 // Streams a raw SSE body through a real ReadableStream, split into
@@ -284,6 +386,8 @@ function sseStreamResponse(rawBody: string, chunkSize = 40) {
 describe('streamGeminiText', () => {
   const originalKey = process.env.GEMINI_API_KEY
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY
+  const originalForceProvider = process.env.AI_FORCE_PROVIDER
+  const originalFallbackEnabled = process.env.AI_FALLBACK_ENABLED
   beforeEach(() => {
     process.env.GEMINI_API_KEY = 'test-key'
     // A real OPENROUTER_API_KEY may be present in .env.local (loaded by
@@ -292,12 +396,18 @@ describe('streamGeminiText', () => {
     // to GEMINI_API_KEY/ANTHROPIC_API_KEY. Tests that actually exercise the
     // fallback set it back explicitly in their own nested describe below.
     delete process.env.OPENROUTER_API_KEY
+    delete process.env.AI_FORCE_PROVIDER
+    delete process.env.AI_FALLBACK_ENABLED
   })
   afterEach(() => {
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY
     else process.env.GEMINI_API_KEY = originalKey
     if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY
     else process.env.OPENROUTER_API_KEY = originalOpenRouterKey
+    if (originalForceProvider === undefined) delete process.env.AI_FORCE_PROVIDER
+    else process.env.AI_FORCE_PROVIDER = originalForceProvider
+    if (originalFallbackEnabled === undefined) delete process.env.AI_FALLBACK_ENABLED
+    else process.env.AI_FALLBACK_ENABLED = originalFallbackEnabled
   })
 
   async function collect(gen: AsyncGenerator<{ textDelta: string }>) {
@@ -353,23 +463,35 @@ describe('streamGeminiText', () => {
       else process.env.AI_RETRY_ATTEMPTS = originalRetryAttempts
     })
 
-    it('retries a 429 and streams normally once a later attempt succeeds', async () => {
+    it('retries a transient 500 and streams normally once a later attempt succeeds', async () => {
       process.env.AI_RETRY_ATTEMPTS = '3'
       const body = 'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\r\n\r\n'
       const fetchImpl = vi
         .fn()
-        .mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }))
+        .mockResolvedValueOnce(jsonResponse(500, { error: 'upstream down' }))
         .mockResolvedValueOnce(sseStreamResponse(body))
       const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
       expect(chunks).toEqual(['ok'])
       expect(fetchImpl).toHaveBeenCalledTimes(2)
     })
 
-    it('gives up after exhausting retry attempts on a persistent 429', async () => {
+    it('gives up after exhausting retry attempts on a persistent 500', async () => {
       process.env.AI_RETRY_ATTEMPTS = '2'
-      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'still limited' }))
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(500, { error: 'still down' }))
       await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
       expect(fetchImpl).toHaveBeenCalledTimes(2)
+    })
+
+    // The fix for the user-reported "upload/analyze takes forever" latency:
+    // every real 429 this app hits is a hard daily quota (see qa/FINDINGS.md),
+    // so retrying it can never succeed within the backoff window -- it just
+    // delays reaching the fallback. Proven here with a high retry cap so a
+    // pass can't be mistaken for "the cap happened to be low."
+    it('does not retry a 429 -- fails on the first attempt regardless of retry budget', async () => {
+      process.env.AI_RETRY_ATTEMPTS = '4'
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
+      await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
     })
 
     it('does not retry a non-retryable failure (e.g. a blocked prompt reported as 400)', async () => {
@@ -413,6 +535,37 @@ describe('streamGeminiText', () => {
       process.env.AI_RETRY_ATTEMPTS = '1'
       const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
       await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
+    })
+
+    it('does not fall back when AI_FALLBACK_ENABLED=false, even with a key configured', async () => {
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_FALLBACK_ENABLED = 'false'
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
+      await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiUpstreamError)
+      expect(fetchImpl.mock.calls.every(([url]) => !String(url).includes('openrouter'))).toBe(true)
+    })
+  })
+
+  describe('AI_FORCE_PROVIDER=openrouter', () => {
+    it('routes straight to OpenRouter as a single chunk, skipping the Gemini stream entirely', async () => {
+      process.env.OPENROUTER_API_KEY = 'or-key'
+      process.env.AI_FORCE_PROVIDER = 'openrouter'
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('openrouter.ai')) {
+          return jsonResponse(200, { choices: [{ message: { content: 'openrouter answer' } }], usage: {} })
+        }
+        throw new Error('should never call Gemini when a provider is forced')
+      })
+      const chunks = await collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))
+      expect(chunks).toEqual(['openrouter answer'])
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws AiDisabledError when forced without an OpenRouter key, even though Gemini has one', async () => {
+      process.env.AI_FORCE_PROVIDER = 'openrouter'
+      const fetchImpl = vi.fn()
+      await expect(collect(streamGeminiText('main', 'sys', 'user', { fetchImpl }))).rejects.toBeInstanceOf(AiDisabledError)
+      expect(fetchImpl).not.toHaveBeenCalled()
     })
   })
 })

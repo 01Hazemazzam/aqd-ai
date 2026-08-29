@@ -1,5 +1,6 @@
 'use client'
 import { createContext, useContext, useEffect, useState } from 'react'
+import { MotionConfig } from 'motion/react'
 
 type Theme = 'light' | 'dark' | 'system'
 const ThemeContext = createContext<{ theme: Theme; setTheme: (t: Theme) => void }>({
@@ -22,7 +23,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem('theme', theme)
   }, [theme])
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {/* "user" reads prefers-reduced-motion live -- every motion/react
+          animation in the tree collapses to an instant cut automatically,
+          so no component has to check the media query itself. */}
+      <MotionConfig reducedMotion="user">{children}</MotionConfig>
+    </ThemeContext.Provider>
+  )
 }
 
 export const useTheme = () => useContext(ThemeContext)

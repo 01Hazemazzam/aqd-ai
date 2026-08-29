@@ -88,6 +88,11 @@ const OPENROUTER_FALLBACK: ModelSpec = {
 
 export interface AiCallResult {
   text: string
+  /** The provider that actually served this call -- not necessarily the tier's default (see AI_FORCE_PROVIDER / the OpenRouter fallback). */
+  provider: Provider
+  /** The model id requested (a rolling alias, e.g. "gemini-flash-latest"). */
+  requestedModel: string
+  /** What the provider actually resolved and served -- can differ from requestedModel; see the per-provider comments below. */
   model: string
   inputTokens: number
   outputTokens: number
@@ -98,6 +103,26 @@ function apiKeyFor(provider: Provider): string | undefined {
   if (provider === 'anthropic') return process.env.ANTHROPIC_API_KEY
   if (provider === 'openrouter') return process.env.OPENROUTER_API_KEY
   return process.env.GEMINI_API_KEY
+}
+
+// Explicit, developer-set override for testing a specific provider path on
+// demand (e.g. proving the OpenRouter route works end-to-end without
+// needing Gemini to actually be down). Only 'openrouter' is meaningful here
+// -- forcing 'gemini' or 'anthropic' would just be each tier's own default.
+// Unset (the normal case) leaves every tier's provider mapping untouched.
+function forcedProvider(): Provider | undefined {
+  const value = process.env.AI_FORCE_PROVIDER
+  return value === 'openrouter' ? value : undefined
+}
+
+// Automatic fallback is the desired default (it's what actually resolves
+// the Gemini free-tier quota ceiling), but a QA run validating Gemini's OWN
+// behavior needs a way to see its real, unmasked failures instead of having
+// them silently absorbed by a fallback answer. AI_FALLBACK_ENABLED=false is
+// that explicit escape hatch; any other value (including unset) leaves the
+// existing default-on behavior unchanged.
+function fallbackAllowed(): boolean {
+  return process.env.AI_FALLBACK_ENABLED !== 'false'
 }
 
 function estimateCost(spec: ModelSpec, inputTokens: number, outputTokens: number): number {
@@ -127,7 +152,9 @@ export async function callAnthropic(
   })
 
   if (!response.ok) {
-    const retryable = response.status === 429 || response.status >= 500
+    // 429 is deliberately NOT retryable here -- see the matching comment on
+    // callGemini, the provider this app has actually hit 429s against.
+    const retryable = response.status >= 500
     throw new AiUpstreamError(`Anthropic ${response.status}: ${await response.text()}`, retryable, response.status)
   }
 
@@ -140,6 +167,8 @@ export async function callAnthropic(
 
   return {
     text,
+    provider: 'anthropic',
+    requestedModel: spec.model,
     // Anthropic echoes back the exact snapshot it served, which can differ
     // from the alias requested (e.g. a "-latest" tag resolves to a dated
     // snapshot). Recording the resolved model, not the requested one, is
@@ -171,7 +200,15 @@ export async function callGemini(
   })
 
   if (!response.ok) {
-    const retryable = response.status === 429 || response.status >= 500
+    // Every real 429 this app has ever hit (see qa/FINDINGS.md) is a hard
+    // free-tier DAILY quota ("Quota exceeded ... limit: 20"), not a
+    // transient per-minute limit -- confirmed by a retry immediately
+    // failing with the identical 429 again. Exponential backoff (up to 15s
+    // across 4 attempts) cannot fix a daily cap; it only delays reaching
+    // the OpenRouter fallback (or, for embeddings, delays a failure that
+    // has no fallback at all) with zero chance of the retry succeeding.
+    // Treating 429 as non-retryable skips straight to whatever comes next.
+    const retryable = response.status >= 500
     throw new AiUpstreamError(`Gemini ${response.status}: ${await response.text()}`, retryable, response.status)
   }
 
@@ -195,6 +232,8 @@ export async function callGemini(
   const usage = body.usageMetadata ?? {}
   return {
     text,
+    provider: 'gemini',
+    requestedModel: spec.model,
     // `spec.model` here is often a rolling alias (e.g. "gemini-flash-latest");
     // `modelVersion` is what Google actually resolved it to and served. See
     // the matching comment in callAnthropic.
@@ -230,7 +269,10 @@ export async function callOpenRouter(
   })
 
   if (!response.ok) {
-    const retryable = response.status === 429 || response.status >= 500
+    // Same reasoning as callGemini: OpenRouter is itself the last-resort
+    // fallback, so a 429 here has nowhere further to retry into anyway --
+    // fail fast rather than spend up to 15s of backoff first.
+    const retryable = response.status >= 500
     throw new AiUpstreamError(`OpenRouter ${response.status}: ${await response.text()}`, retryable, response.status)
   }
 
@@ -241,6 +283,8 @@ export async function callOpenRouter(
   const usage = body.usage ?? {}
   return {
     text,
+    provider: 'openrouter',
+    requestedModel: spec.model,
     // Echoes back which model actually served the request -- OpenRouter can
     // route a single model id to different underlying providers.
     model: body.model ?? spec.model,
@@ -267,6 +311,7 @@ async function openRouterFallback(
   userPrompt: string,
   fetchImpl: typeof fetch,
 ): Promise<AiCallResult | null> {
+  if (!fallbackAllowed()) return null
   const openRouterKey = process.env.OPENROUTER_API_KEY
   if (!openRouterKey) return null
   try {
@@ -285,9 +330,19 @@ export async function aiComplete(
   userPrompt: string,
   opts?: { fetchImpl?: typeof fetch },
 ): Promise<AiCallResult> {
+  const fetchImpl = opts?.fetchImpl ?? fetch
+
+  // AI_FORCE_PROVIDER=openrouter -- explicit developer override, not the
+  // fallback path (fallbackAllowed() intentionally does not gate this: an
+  // explicit force is a deliberate choice, not an implicit silent switch).
+  if (forcedProvider() === 'openrouter') {
+    const openRouterKey = process.env.OPENROUTER_API_KEY
+    if (!openRouterKey) throw new AiDisabledError('AI_FORCE_PROVIDER=openrouter but OPENROUTER_API_KEY is not set')
+    return callOpenRouter(OPENROUTER_FALLBACK, openRouterKey, systemPrompt, userPrompt, fetchImpl)
+  }
+
   const spec = TIERS[tier]
   const apiKey = apiKeyFor(spec.provider)
-  const fetchImpl = opts?.fetchImpl ?? fetch
 
   if (!apiKey) {
     const fallback = await openRouterFallback(spec.provider, systemPrompt, userPrompt, fetchImpl)
@@ -345,7 +400,9 @@ async function fetchStreamWithRetry(
     })
     if (response.ok && response.body) return response
 
-    const retryable = response.status === 429 || response.status >= 500
+    // See callGemini's comment: a 429 here is the same hard daily quota,
+    // not worth retrying.
+    const retryable = response.status >= 500
     const err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable, response.status)
     if (!retryable || attempt === attempts - 1) throw err
     lastError = err
@@ -372,12 +429,25 @@ export async function* streamGeminiText(
   userPrompt: string,
   opts?: { fetchImpl?: typeof fetch },
 ): AsyncGenerator<StreamChunk> {
+  const fetchImpl = opts?.fetchImpl ?? fetch
+
+  // Same explicit override as aiComplete. OpenRouter has no streaming
+  // support here (see the file-level comment above), so a forced call
+  // yields its whole answer as one chunk -- same shape callers already
+  // handle for the fallback path below.
+  if (forcedProvider() === 'openrouter') {
+    const openRouterKey = process.env.OPENROUTER_API_KEY
+    if (!openRouterKey) throw new AiDisabledError('AI_FORCE_PROVIDER=openrouter but OPENROUTER_API_KEY is not set')
+    const result = await callOpenRouter(OPENROUTER_FALLBACK, openRouterKey, systemPrompt, userPrompt, fetchImpl)
+    yield { textDelta: result.text }
+    return
+  }
+
   const spec = TIERS[tier]
   if (spec.provider !== 'gemini') {
     throw new AiUpstreamError(`Streaming is only implemented for Gemini, tier "${tier}" resolves to "${spec.provider}"`, false)
   }
   const apiKey = apiKeyFor('gemini')
-  const fetchImpl = opts?.fetchImpl ?? fetch
 
   if (!apiKey) {
     const fallback = await openRouterFallback('gemini', systemPrompt, userPrompt, fetchImpl)

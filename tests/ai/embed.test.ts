@@ -58,14 +58,26 @@ describe('embedTexts', () => {
     expect(err.retryable).toBe(false)
   })
 
-  it('retries a retryable failure and succeeds', async () => {
+  it('retries a transient 500 and succeeds', async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }))
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'upstream down' }))
       .mockResolvedValueOnce(jsonResponse(200, { embeddings: [{ values: [0.5] }] }))
     const result = await embedTexts(['a'], { fetchImpl })
     expect(result).toEqual([[0.5]])
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  // Embeddings have no fallback provider (see ingestContract's catch, which
+  // just logs and moves on) -- a real 429 has always been a hard daily quota
+  // (qa/FINDINGS.md), so retrying it before giving up only delayed the
+  // inevitable failure by up to 15s during upload for nothing. This is the
+  // fix for the user-reported "upload takes forever" latency.
+  it('does not retry a 429 -- fails on the first attempt so upload does not stall on a dead quota', async () => {
+    process.env.AI_RETRY_ATTEMPTS = '4'
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, { error: 'quota exceeded' }))
+    await expect(embedTexts(['a'], { fetchImpl })).rejects.toBeInstanceOf(AiUpstreamError)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it('batches requests larger than the 100-item cap into multiple calls', async () => {

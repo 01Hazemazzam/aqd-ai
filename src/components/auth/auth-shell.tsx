@@ -1,6 +1,7 @@
 import { useTranslations } from 'next-intl'
 import { BrandPanel } from './brand-panel'
 import { SettingsToggles } from '@/components/settings-toggles'
+import { FadeIn } from '@/components/ui/reveal'
 
 export function AuthShell({ title, subtitle, children }: {
   title: string; subtitle: string; children: React.ReactNode
@@ -15,11 +16,11 @@ export function AuthShell({ title, subtitle, children }: {
           <SettingsToggles />
         </div>
         <div className="flex flex-1 items-center justify-center py-8">
-          <div className="w-full max-w-sm">
+          <FadeIn className="w-full max-w-sm">
             <h1 className="mb-2 font-serif text-3xl font-medium tracking-tight text-ink">{title}</h1>
             <p className="mb-8 text-sm text-ink-dim">{subtitle}</p>
             {children}
-          </div>
+          </FadeIn>
         </div>
       </div>
       <BrandPanel />

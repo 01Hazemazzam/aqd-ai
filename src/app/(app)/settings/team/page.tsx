@@ -1,8 +1,10 @@
+import { UserPlus, Users, Mail } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { InviteForm } from './invite-form'
 import { MemberRow } from './member-row'
 import { cancelInvite } from './actions'
@@ -10,6 +12,14 @@ import { cancelInvite } from './actions'
 const ROLE_TONE = { owner: 'brass', admin: 'accent', member: 'neutral' } as const
 
 type Member = { user_id: string; email: string; role: 'owner' | 'admin' | 'member'; created_at: string }
+
+function Avatar({ email }: { email: string }) {
+  return (
+    <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-3 text-sm font-semibold text-ink-dim">
+      {email.charAt(0).toUpperCase()}
+    </span>
+  )
+}
 
 export default async function TeamPage() {
   const t = await getTranslations('team')
@@ -33,7 +43,10 @@ export default async function TeamPage() {
 
       {canManage && (
         <section className="mb-10">
-          <h2 className="mb-3 text-sm font-semibold text-ink">{t('inviteTitle')}</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+            <UserPlus size={15} aria-hidden="true" className="text-accent" />
+            {t('inviteTitle')}
+          </h2>
           <Card>
             <InviteForm canInviteOwner={myRole === 'owner'} />
           </Card>
@@ -41,14 +54,20 @@ export default async function TeamPage() {
       )}
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-ink">{t('membersTitle')}</h2>
-        <ul className="flex flex-col gap-3">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <Users size={15} aria-hidden="true" className="text-accent" />
+          {t('membersTitle')}
+        </h2>
+        <StaggerList className="flex flex-col gap-3">
           {(members ?? []).map((member) => (
-            <li key={member.user_id}>
+            <StaggerItem key={member.user_id}>
               <Card className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{member.email}</p>
-                  {member.user_id === user?.id && <p className="text-xs text-ink-faint">{t('you')}</p>}
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar email={member.email} />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{member.email}</p>
+                    {member.user_id === user?.id && <p className="text-xs text-ink-faint">{t('you')}</p>}
+                  </div>
                 </div>
                 {canManage ? (
                   <MemberRow
@@ -62,17 +81,20 @@ export default async function TeamPage() {
                   <Badge tone={ROLE_TONE[member.role as keyof typeof ROLE_TONE]}>{t(`roles.${member.role}`)}</Badge>
                 )}
               </Card>
-            </li>
+            </StaggerItem>
           ))}
-        </ul>
+        </StaggerList>
       </section>
 
       {canManage && !!invites?.length && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-ink">{t('pendingTitle')}</h2>
-          <ul className="flex flex-col gap-3">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+            <Mail size={15} aria-hidden="true" className="text-accent" />
+            {t('pendingTitle')}
+          </h2>
+          <StaggerList className="flex flex-col gap-3">
             {invites.map((invite) => (
-              <li key={invite.id}>
+              <StaggerItem key={invite.id}>
                 <Card className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{invite.email}</p>
@@ -82,9 +104,9 @@ export default async function TeamPage() {
                     <button type="submit" className="text-sm font-medium text-risk-high hover:underline">{t('cancelInvite')}</button>
                   </form>
                 </Card>
-              </li>
+              </StaggerItem>
             ))}
-          </ul>
+          </StaggerList>
         </section>
       )}
     </main>

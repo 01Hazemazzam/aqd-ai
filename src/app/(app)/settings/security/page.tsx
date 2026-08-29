@@ -1,9 +1,12 @@
 import Link from 'next/link'
+import { KeyRound, MonitorSmartphone, History } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { revokeDevice } from './actions'
 
 const EVENT_TONE: Record<string, 'neutral' | 'accent' | 'brass'> = {
@@ -36,7 +39,10 @@ export default async function SecurityPage() {
       <h1 className="mb-8 font-serif text-3xl font-medium tracking-tight text-ink text-balance">{t('title')}</h1>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-ink">{t('passwordTitle')}</h2>
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <KeyRound size={15} aria-hidden="true" className="text-accent" />
+          {t('passwordTitle')}
+        </h2>
         <Card className="flex items-center justify-between gap-4">
           <p className="text-sm text-ink-dim">{t('passwordHint')}</p>
           {/* Reuses the existing email-code reset flow rather than a
@@ -50,14 +56,19 @@ export default async function SecurityPage() {
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold text-ink">{t('devicesTitle')}</h2>
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <MonitorSmartphone size={15} aria-hidden="true" className="text-accent" />
+          {t('devicesTitle')}
+        </h2>
         {!devices?.length && (
-          <Card><p className="text-sm text-ink-dim">{t('devicesEmpty')}</p></Card>
+          <Card>
+            <EmptyState icon={<MonitorSmartphone size={20} aria-hidden="true" />} title={t('devicesEmpty')} />
+          </Card>
         )}
         {!!devices?.length && (
-          <ul className="flex flex-col gap-3">
+          <StaggerList className="flex flex-col gap-3">
             {devices.map((device) => (
-              <li key={device.id}>
+              <StaggerItem key={device.id}>
                 <Card className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{device.label || device.user_agent || t('unknownDevice')}</p>
@@ -66,27 +77,30 @@ export default async function SecurityPage() {
                     </p>
                   </div>
                   <form action={revokeDevice.bind(null, device.id)}>
-                    <Button type="submit" variant="danger">{t('revoke')}</Button>
+                    <Button type="submit" variant="danger" size="sm">{t('revoke')}</Button>
                   </form>
                 </Card>
-              </li>
+              </StaggerItem>
             ))}
-          </ul>
+          </StaggerList>
         )}
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-ink">{t('activityTitle')}</h2>
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <History size={15} aria-hidden="true" className="text-accent" />
+          {t('activityTitle')}
+        </h2>
         {!events?.length && (
           <Card><p className="text-sm text-ink-dim">{t('activityEmpty')}</p></Card>
         )}
         {!!events?.length && (
           <ul className="flex flex-col gap-2">
             {events.map((event) => (
-              <li key={event.id} className="flex items-center justify-between gap-4 rounded-lg border border-edge bg-surface-2 px-4 py-2.5">
+              <li key={event.id} className="flex items-center justify-between gap-4 rounded-lg border border-edge bg-surface-2 px-4 py-2.5 shadow-sm">
                 <span className="text-sm text-ink-dim">{t.has(`events.${event.kind}`) ? t(`events.${event.kind}` as 'events.login') : event.kind}</span>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-ink-faint">
+                  <span className="text-xs tabular-nums text-ink-faint">
                     {new Date(event.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                   </span>
                   <Badge tone={EVENT_TONE[event.kind] ?? 'neutral'}>{event.kind}</Badge>

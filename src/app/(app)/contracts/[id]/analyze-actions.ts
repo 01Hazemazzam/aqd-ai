@@ -53,12 +53,22 @@ async function runTask<T>(
   task: string,
   tier: Tier,
   prompt: { system: string; user: string },
-  logUsage: (row: { task: string; model: string; inputTokens: number; outputTokens: number; costUsd: number }) => Promise<void>,
+  logUsage: (row: {
+    task: string
+    provider: string
+    requestedModel: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+    costUsd: number
+  }) => Promise<void>,
 ): Promise<TaskRun<T>> {
   try {
     const result = await aiComplete(tier, prompt.system, prompt.user)
     await logUsage({
       task,
+      provider: result.provider,
+      requestedModel: result.requestedModel,
       model: result.model,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
@@ -125,11 +135,21 @@ export async function analyzeContract(contractId: string) {
   }))
   const clauses: PromptClause[] = clauseRows.map((c) => ({ id: c.id, clauseNumber: c.clause_number, body: c.body }))
 
-  const logUsage = async (row: { task: string; model: string; inputTokens: number; outputTokens: number; costUsd: number }) => {
+  const logUsage = async (row: {
+    task: string
+    provider: string
+    requestedModel: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+    costUsd: number
+  }) => {
     await supabase.from('usage_events').insert({
       org_id: orgId,
       contract_id: contractId,
       task: row.task,
+      provider: row.provider,
+      requested_model: row.requestedModel,
       model: row.model,
       input_tokens: row.inputTokens,
       output_tokens: row.outputTokens,

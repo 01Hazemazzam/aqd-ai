@@ -84,7 +84,12 @@
   "dashboard": {
     "welcome": "أهلاً بك.",
     "subtitle": "مؤسستك جاهزة الآن.",
-    "viewContracts": "عرض العقود"
+    "viewContracts": "عرض العقود",
+    "uploadContract": "رفع عقد",
+    "stats": {
+      "totalContracts": "العقود",
+      "readyContracts": "تم تحليلها"
+    }
   },
   "contracts": {
     "title": "العقود",
@@ -158,7 +163,9 @@
       "help": "المساعدة",
       "team": "الفريق",
       "security": "الأمان",
-      "signOut": "تسجيل الخروج"
+      "signOut": "تسجيل الخروج",
+      "openMenu": "فتح القائمة",
+      "closeMenu": "إغلاق القائمة"
     }
   },
   "security": {

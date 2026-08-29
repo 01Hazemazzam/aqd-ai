@@ -24,8 +24,9 @@ export function Input({
         aria-describedby={cn(error && errorId, hint && hintId) || undefined}
         className={cn(
           'rounded-lg border bg-surface-2 px-3 py-2 text-sm text-ink',
+          'transition-colors duration-[var(--duration-fast)]',
           'placeholder:text-ink-faint focus-visible:outline-2 focus-visible:outline-accent',
-          error ? 'border-risk-high' : 'border-edge',
+          error ? 'border-risk-high' : 'border-edge hover:border-ink-faint',
           className,
         )}
       />

@@ -59,8 +59,9 @@ export function CodeInput({
             onKeyDown={onKeyDown(i)}
             onPaste={onPaste}
             className={cn(
-              'h-12 w-10 rounded-lg border bg-surface-2 text-center text-lg font-semibold text-ink',
-              'tabular-nums focus-visible:outline-2 focus-visible:outline-accent',
+              'h-12 w-10 rounded-lg border bg-surface-2 text-center text-lg font-semibold text-ink shadow-sm',
+              'tabular-nums transition-[border-color,transform] duration-[var(--duration-fast)]',
+              'focus-visible:scale-105 focus-visible:outline-2 focus-visible:outline-accent',
               error ? 'border-risk-high' : value[i] ? 'border-brass' : 'border-edge',
             )}
           />

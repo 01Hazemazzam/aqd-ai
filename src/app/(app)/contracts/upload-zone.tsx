@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { UploadCloud } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 import { createUploadTarget, ingestContract } from './actions'
@@ -64,6 +65,7 @@ export function UploadZone() {
       <Button
         type="button"
         loading={stage === 'uploading' || stage === 'processing'}
+        icon={<UploadCloud size={16} aria-hidden="true" />}
         onClick={() => inputRef.current?.click()}
       >
         {stage === 'uploading' ? t('uploading')

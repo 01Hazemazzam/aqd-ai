@@ -29,7 +29,11 @@ async function embedBatch(texts: string[], apiKey: string, model: string, fetchI
       )
 
       if (!response.ok) {
-        const retryable = response.status === 429 || response.status >= 500
+        // Same hard-daily-quota reasoning as router.ts's callGemini: a 429
+        // here has never once been transient in this app's real usage, and
+        // embeddings have no fallback provider to retry into -- retrying
+        // just delays an inevitable failure by up to 15s for nothing.
+        const retryable = response.status >= 500
         throw new AiUpstreamError(`Gemini embed ${response.status}: ${await response.text()}`, retryable)
       }
 
