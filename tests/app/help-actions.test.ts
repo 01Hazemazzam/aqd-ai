@@ -24,12 +24,15 @@ describe('askProductHelper', () => {
     expect(aiComplete).toHaveBeenCalledWith('cheap', expect.any(String), 'How do I invite a teammate?')
   })
 
-  it('classifies a real 429 as quota_exceeded, same as analysis and chat', async () => {
+  it('classifies a real 429 as quota_exceeded, same as analysis and chat, with the real error logged', async () => {
     const { AiUpstreamError } = await import('@/lib/ai/router')
-    aiComplete.mockRejectedValue(new AiUpstreamError('Gemini 429: quota', true, 429))
+    aiComplete.mockRejectedValue(new AiUpstreamError('Gemini 429: quota exceeded', true, 429))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { askProductHelper } = await import('@/app/(app)/help/actions')
 
     expect(await askProductHelper('How does risk scoring work?')).toEqual({ answer: null, error: 'quota_exceeded' })
+    expect(errorSpy).toHaveBeenCalledWith('[askProductHelper] request failed:', expect.stringContaining('quota exceeded'))
+    errorSpy.mockRestore()
   })
 
   it('classifies a missing API key as ai_disabled', async () => {

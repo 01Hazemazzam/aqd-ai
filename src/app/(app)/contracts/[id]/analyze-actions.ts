@@ -171,11 +171,18 @@ export async function analyzeContract(contractId: string) {
     }
   }
 
+  // Some (not all) tasks failing previously saved silently as a plain
+  // 'ready' analysis -- the failed task's section just didn't appear, with
+  // nothing telling the user or a future debugger that anything went wrong.
+  // Status stays 'ready' (the tasks that DID succeed are real and worth
+  // showing), but 'partial' on an otherwise-ready analysis is a visible,
+  // non-blocking notice rather than a silently incomplete result.
+  const allSucceeded = summaryRun.ok && fieldsRun.ok && risksRun.ok && obligationsRun.ok
   await supabase
     .from('analyses')
     .update({
       status: 'ready',
-      error: null,
+      error: allSucceeded ? null : 'partial',
       summary: summaryRun.ok ? summaryRun.data?.summary ?? null : null,
       fields: fieldsRun.ok ? fieldsRun.data : null,
       obligations: obligationsRun.ok ? obligationsRun.data?.obligations ?? null : null,

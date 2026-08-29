@@ -1,7 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-export async function middleware(request: NextRequest) {
+// Renamed from middleware.ts -- Next.js 16 deprecated the `middleware` file
+// convention in favor of `proxy` (same behavior, same config/matcher shape,
+// just a rename: https://nextjs.org/docs/messages/middleware-to-proxy).
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request })
 
   const supabase = createServerClient(

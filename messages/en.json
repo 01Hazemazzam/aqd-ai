@@ -112,6 +112,7 @@
     "analyzeCta": "Analyze",
     "reanalyzeCta": "Re-analyze",
     "analyzing": "Analyzing…",
+    "partialAnalysisNotice": "Some analysis tasks didn't complete — showing what's available. Try re-analyzing to fill in the rest.",
     "analyzeErrors": {
       "no_version": "This contract has no processed version yet.",
       "no_clauses": "This contract has no clauses to analyze.",
@@ -175,6 +176,7 @@
     "signedInAs": "Signed in as {email}",
     "events": {
       "login": "Signed in",
+      "login_failed": "Sign-in attempt failed",
       "code_sent": "Verification code sent",
       "code_failed": "Verification code entered incorrectly",
       "code_send_failed": "Verification code failed to send",

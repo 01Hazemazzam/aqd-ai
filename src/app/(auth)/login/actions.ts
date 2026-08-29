@@ -13,13 +13,18 @@ export async function signIn(_prev: unknown, formData: FormData) {
 
   const supabase = await createServerSupabase()
   const { error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return { error: toAuthErrorCode(error) }
+  if (error) {
+    // log_login_failed (security definer) bridges the same gap issue_code/
+    // verify_code already bridge for login_codes: a failed attempt has no
+    // session, so events_own_insert's `user_id = auth.uid()` RLS check can't
+    // pass for a direct insert. It looks the user up internally and writes
+    // nothing when no such user exists, so calling it here doesn't add a
+    // second account-enumeration oracle alongside this action's own uniform
+    // error response below.
+    await supabase.rpc('log_login_failed', { p_email: email })
+    return { error: toAuthErrorCode(error) }
+  }
 
-  // Written only on success: a failed attempt has no session yet, so there is
-  // no RLS-permitted way to attribute it to a specific user without a
-  // security-definer function -- and doing that carefully (without becoming
-  // an account-enumeration oracle, the exact thing this login flow already
-  // guards against) is its own piece of work, not a side effect of this one.
   await supabase.from('auth_events').insert({ kind: 'login' })
 
   const secret = await getDeviceSecret()

@@ -17,6 +17,10 @@ export async function askProductHelper(question: string) {
     const result = await aiComplete('cheap', prompt.system, prompt.user)
     return { answer: result.text.trim(), error: null }
   } catch (err) {
+    // Logged the same way analyze-actions.ts's runTask and chat's route.ts
+    // log a task failure -- classification alone would otherwise discard
+    // the real provider error with no trace anywhere.
+    console.error('[askProductHelper] request failed:', err instanceof Error ? err.message : err)
     return { answer: null, error: classifyAnalysisError([mapTaskError(err)]) }
   }
 }

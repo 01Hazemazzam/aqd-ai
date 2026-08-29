@@ -15,52 +15,29 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
   const t = await getTranslations('contracts')
   const supabase = await createServerSupabase()
 
-  const { data: contract } = await supabase
-    .from('contracts')
-    .select('id, title, status, error')
-    .eq('id', id)
-    .maybeSingle()
+  // Four independent reads (each keyed only on the route's own contractId,
+  // not on each other's results) previously ran as five-plus sequential
+  // round trips. Batched here -- same queries, same RLS, just not waiting on
+  // each other -- cuts this page's DB latency roughly in half.
+  const [{ data: contract }, { data: version }, { data: analysis }, { data: chat }] = await Promise.all([
+    supabase.from('contracts').select('id, title, status, error').eq('id', id).maybeSingle(),
+    supabase.from('contract_versions').select('id').eq('contract_id', id).order('version_no', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('analyses').select('id, status, error, summary, fields, obligations').eq('contract_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('chats').select('id').eq('contract_id', id).maybeSingle(),
+  ])
   if (!contract) notFound()
 
-  const { data: version } = await supabase
-    .from('contract_versions')
-    .select('id')
-    .eq('contract_id', id)
-    .order('version_no', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const { data: clauses } = version
-    ? await supabase
-        .from('clauses')
-        .select('id, ordinal, clause_number, lang, body')
-        .eq('version_id', version.id)
-        .order('ordinal', { ascending: true })
-    : { data: null }
-
-  const { data: analysis } = await supabase
-    .from('analyses')
-    .select('id, status, error, summary, fields, obligations')
-    .eq('contract_id', id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const { data: findings } = analysis
-    ? await supabase
-        .from('risk_findings')
-        .select('id, clause_id, severity, title, reason')
-        .eq('analysis_id', analysis.id)
-    : { data: null }
-
-  const { data: chat } = await supabase.from('chats').select('id').eq('contract_id', id).maybeSingle()
-  const { data: chatMessages } = chat
-    ? await supabase
-        .from('chat_messages')
-        .select('id, role, content, not_found')
-        .eq('chat_id', chat.id)
-        .order('created_at', { ascending: true })
-    : { data: null }
+  const [{ data: clauses }, { data: findings }, { data: chatMessages }] = await Promise.all([
+    version
+      ? supabase.from('clauses').select('id, ordinal, clause_number, lang, body').eq('version_id', version.id).order('ordinal', { ascending: true })
+      : Promise.resolve({ data: null }),
+    analysis
+      ? supabase.from('risk_findings').select('id, clause_id, severity, title, reason').eq('analysis_id', analysis.id)
+      : Promise.resolve({ data: null }),
+    chat
+      ? supabase.from('chat_messages').select('id, role, content, not_found').eq('chat_id', chat.id).order('created_at', { ascending: true })
+      : Promise.resolve({ data: null }),
+  ])
 
   const messageIds = (chatMessages ?? []).map((m) => m.id)
   const { data: citationRows } = messageIds.length
@@ -120,6 +97,12 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
           <p role="alert" className="text-sm text-risk-high">
             {t(`analyzeErrors.${analysis.error}` as 'analyzeErrors.unknown')}
           </p>
+        </Card>
+      )}
+
+      {analysis?.status === 'ready' && analysis.error === 'partial' && (
+        <Card className="mb-6">
+          <p role="status" className="text-sm text-risk-high">{t('partialAnalysisNotice')}</p>
         </Card>
       )}
 

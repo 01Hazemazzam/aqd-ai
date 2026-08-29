@@ -739,3 +739,93 @@ no key is present), `tsc --noEmit` clean, `next build` clean.
   the literal persisted `"NOT_FOUND"` sentinel), citations attach to the right message with clause
   numbers resolved, an unanswered (failed) question shows with no citations rather than throwing,
   and an orphaned citation resolves to a null clause number rather than crashing
+
+---
+
+## Final hardening pass: the 4 tracked P1s, a security/RLS re-audit, logging gaps, performance, cleanup
+
+Instructed to stop feature work and harden for release, with Resend/Google OAuth explicitly left
+tracked rather than configured. Fixed all four P1s from the prior release memo, re-audited security
+end to end, closed three more silent-failure gaps of the same shape already fixed elsewhere, took one
+safe performance win, and cleaned up a large amount of accumulated local test data.
+
+🟢 **P1: partial analysis failure now visible.** If some (not all) of the four analysis tasks fail,
+`analyzeContract` previously still saved `status: 'ready'` with zero signal that anything was
+missing. Now persists `error: 'partial'` on an otherwise-ready analysis, and the contract page shows
+a small non-blocking notice. Regression test (`tests/app/analyze-partial-failure.test.ts`) drives
+the real `analyzeContract` function against a mocked Supabase client and asserts the persisted
+payload for both the one-task-fails and all-succeed cases.
+
+🟢 **P1: `login_failed` events are now recorded.** Deferred since Sub-project 1 because a failed
+login has no session, so `events_own_insert`'s `user_id = auth.uid()` RLS check can't pass for a
+direct insert. Added `log_login_failed(p_email)`, a security-definer function (migration `0014`)
+that looks the user up internally and writes nothing (no exception, no observable difference) when
+the email matches no account -- callable by `anon`, the one place in this app that grant is
+actually correct, since a failed login is inherently pre-authentication. **Live-verified end to
+end**, including working around a real click-registration quirk in the browser-automation tooling
+(a `computer`-tool click wasn't reaching React's event handler on this specific page load; a
+JS-dispatched `.click()` on the same button worked immediately and correctly) -- confirmed via the
+security activity feed showing "Sign-in attempt failed" twice, in both English and Arabic.
+
+🟢 **P1: Next.js `middleware.ts` migrated to `proxy.ts`.** Pure rename per Next 16's own migration
+guide (function `middleware` → `proxy`, same `config`/`matcher`, no behavior change) -- confirmed
+against `node_modules/next/dist/docs` directly, per this project's own `AGENTS.md` instruction to
+check the vendored docs before touching anything Next.js-specific. The deprecation warning is gone
+from both `next dev` and `next build`. Caught and fixed the one test that hardcoded the old
+filename (`tests/supabase-clients.test.ts`'s `CLIENT_EXCEPTIONS` list).
+
+🟢 **P1: accumulated local test data cleaned up.** 55 `%@test.local` accounts and 579 of 581
+organizations (most already orphaned by earlier, incomplete test cleanup across many prior
+sessions) removed via cascade deletes. Verified safe first: listed every non-`.test.local` account
+and confirmed the two real accounts (the user's own) and their orgs were untouched before deleting
+anything, and re-verified after that both real accounts and their org memberships were fully intact.
+
+🟢 **Security/RLS re-audit, this time systematic rather than spot-checked.** Every `public` table
+confirmed to have RLS enabled (`pg_class.relrowsecurity`); every table's actual policies enumerated
+via `pg_policies`. The two tables with zero policies (`login_codes`, `rate_limits`) are exactly the
+two already documented as deliberately deny-all-except-definer-function. Every org-scoped table's
+policy uses the identical `org_id = jwt_org_id()` expression for both `USING` and `WITH CHECK` --
+no table found with a looser or inconsistent check. Re-confirmed `custom_access_token_hook` and the
+`jwt_org_id()`/`jwt_org_role()` fallback compute the identical "first org joined" query, so there's
+no discrepancy between what a real JWT carries and what the fallback would independently derive --
+the fallback exists only for tokens minted before any org exists, not a live security gap.
+
+🟢 **Three more silent-failure gaps, same shape as the ones already fixed this build, now fixed.**
+`sendCodeEmail`/`sendInviteEmail` (`email.ts`) and `createUploadTarget`'s `parseDocument` call
+(`contracts/actions.ts`) all swallowed their real error entirely on failure -- not just genericized
+like the earlier analysis/chat bugs, fully discarded, no log anywhere. Matters more now given the
+`EMAIL_FROM`/`example.com` finding: without this fix, a real Resend key with a still-wrong
+`EMAIL_FROM` would fail every send with zero trace of why. `askProductHelper`'s catch classified the
+error but didn't log it either, inconsistent with the discipline applied to analysis and chat --
+fixed the same way, plus a `console.error` assertion added to its existing test.
+
+🟢 **One safe performance win: parallelized the contract page's independent DB reads.** `contracts`,
+`contract_versions`, `analyses`, and `chats` each key only on the route's own `contractId`, not on
+each other's results, but were fetched as four-plus sequential round trips. Batched via
+`Promise.all` (same queries, same RLS, just not waiting on each other), followed by a second
+parallel batch for their dependents (`clauses`, `risk_findings`, `chat_messages`). Live-verified the
+page still renders identically, including full chat history. No other redundant AI calls or N+1
+query patterns found on review -- ingestion already batches all clause embeddings into one call,
+analysis already dedupes by content hash, and chat's per-question embedding call is not cacheable
+input by nature.
+
+⚪ **Vitest config warnings cleaned up as a side effect of the file-convention work.** Renamed
+`vitest.config.ts` → `vitest.config.mts` (resolves Vite's native-ESM-loader warning without adding
+`"type": "module"` to the root `package.json`, which would have had much wider, riskier reach) and
+switched `__dirname` to `import.meta.dirname` (required once the file is true ESM). Both warnings
+were present in every single test run this session; neither reappears now.
+
+⚪ **Dead-code scan: manual, not tool-assisted (no `ts-prune`/`knip` installed).** Zero `TODO`/
+`FIXME`/`console.log` found anywhere in `src`. Spot-checked a sample of exports (e.g. `DevCodeHint`)
+for actual usage -- all live. Not exhaustive; a proper unused-export tool would be worth adding if
+this becomes a recurring concern.
+
+**Regression tests added:** `tests/app/analyze-partial-failure.test.ts`, `tests/db/
+login-failed.test.ts` (3 cases against the real function: real email, unknown email, empty/null
+email), plus assertions added to three existing files (`tests/auth/login.test.ts`, `tests/auth/
+email.test.ts`, `tests/app/help-actions.test.ts`) for the three logging fixes.
+
+**Final suite: 215/218 Vitest** (only the same three tracked, independently-reproduced-again
+quota-gated tests fail), **24/24 Playwright e2e** (one run showed 3 failures from resource
+contention with a concurrently-running Vitest suite; re-run in isolation, all 24 passed), `tsc
+--noEmit` clean, `next build` clean with zero warnings of any kind.

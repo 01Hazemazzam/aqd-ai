@@ -51,15 +51,24 @@ describe('sendCodeEmail', () => {
     })
   })
 
-  it('returns false rather than throwing when Resend rejects the send (e.g. an unverified domain)', async () => {
+  it('returns false rather than throwing when Resend rejects the send, and logs the real reason', async () => {
     vi.stubEnv('RESEND_API_KEY', 'test-key')
     vi.stubEnv('EMAIL_FROM', 'Aqd <auth@example.com>')
     send.mockRejectedValue(new Error('403: The example.com domain is not verified'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const { sendCodeEmail } = await import('@/lib/auth/email')
     const ok = await sendCodeEmail('user@test.local', '482913', 'ar')
 
     expect(ok).toBe(false)
+    // Previously swallowed entirely -- this is what would make an
+    // EMAIL_FROM/domain-verification failure diagnosable once a real key is
+    // configured, instead of a silent, untraceable non-delivery.
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sendCodeEmail] Resend send failed:',
+      expect.stringContaining('domain is not verified'),
+    )
+    errorSpy.mockRestore()
   })
 
   it('never calls Resend at all when no key is configured -- matches this environment exactly', async () => {

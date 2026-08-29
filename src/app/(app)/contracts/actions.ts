@@ -107,7 +107,12 @@ export async function ingestContract(
   let text: string
   try {
     text = await parseDocument(bytes, mimeType)
-  } catch {
+  } catch (err) {
+    // Previously swallowed entirely -- with no trace of why a given file
+    // failed to parse (corrupt PDF, an encoding unpdf/mammoth can't handle,
+    // an empty document), a report of "upload doesn't work" for one specific
+    // file would have been undiagnosable from the server side alone.
+    console.error('[createUploadTarget] parseDocument failed:', err instanceof Error ? err.message : err)
     return fail('parse_failed')
   }
 

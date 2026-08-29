@@ -48,4 +48,13 @@ describe('signIn', () => {
     const fd = new FormData(); fd.set('email', 'a@b.c'); fd.set('password', 'x'.repeat(12))
     expect(await signIn(null, fd)).toEqual({ error: 'invalid_credentials' })
   })
+
+  it('logs the failed attempt via the security-definer RPC, not a direct insert', async () => {
+    signInWithPassword.mockResolvedValue({ error: { message: 'Invalid login credentials' } })
+    const { signIn } = await import('@/app/(auth)/login/actions')
+    const fd = new FormData(); fd.set('email', 'a@b.c'); fd.set('password', 'x'.repeat(12))
+    await signIn(null, fd)
+    expect(rpc).toHaveBeenCalledWith('log_login_failed', { p_email: 'a@b.c' })
+    expect(insert).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'login_failed' }))
+  })
 })

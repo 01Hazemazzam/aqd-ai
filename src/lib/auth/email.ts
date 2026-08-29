@@ -29,7 +29,12 @@ export async function sendCodeEmail(to: string, code: string, locale: Locale): P
       html: BODY[locale](code),
     })
     return true
-  } catch {
+  } catch (err) {
+    // Previously fully swallowed -- a real send failure (bad domain, rate
+    // limit, network error) left zero trace anywhere. Matters especially
+    // once a real RESEND_API_KEY is configured: this is the only place that
+    // would ever reveal an EMAIL_FROM domain-verification failure.
+    console.error('[sendCodeEmail] Resend send failed:', err instanceof Error ? err.message : err)
     return false
   }
 }
@@ -60,7 +65,8 @@ export async function sendInviteEmail(to: string, orgName: string, url: string, 
       html: INVITE_BODY[locale](orgName, url),
     })
     return true
-  } catch {
+  } catch (err) {
+    console.error('[sendInviteEmail] Resend send failed:', err instanceof Error ? err.message : err)
     return false
   }
 }

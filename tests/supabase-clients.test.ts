@@ -15,11 +15,12 @@ describe('supabase client usage', () => {
     expect(offenders).toEqual([])
   })
 
-  // Middleware is the one documented exception: it must read and write cookies
-  // through the request/response pair, which `lib/supabase/server.ts` cannot do
-  // because that module goes through `next/headers`. Naming the exception here
-  // keeps the rule enforceable everywhere else.
-  const CLIENT_EXCEPTIONS = [join('src', 'middleware.ts')]
+  // Proxy (renamed from middleware.ts under Next.js 16's convention change)
+  // is the one documented exception: it must read and write cookies through
+  // the request/response pair, which `lib/supabase/server.ts` cannot do
+  // because that module goes through `next/headers`. Naming the exception
+  // here keeps the rule enforceable everywhere else.
+  const CLIENT_EXCEPTIONS = [join('src', 'proxy.ts')]
 
   it('constructs clients only inside lib/supabase', () => {
     const offenders = walk('src')
