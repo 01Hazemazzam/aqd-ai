@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
@@ -33,6 +34,20 @@ export default async function SecurityPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-16 sm:px-10">
       <h1 className="mb-8 font-serif text-3xl font-medium tracking-tight text-ink text-balance">{t('title')}</h1>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink">{t('passwordTitle')}</h2>
+        <Card className="flex items-center justify-between gap-4">
+          <p className="text-sm text-ink-dim">{t('passwordHint')}</p>
+          {/* Reuses the existing email-code reset flow rather than a
+              separate change-password action -- resetPasswordForEmail/
+              confirmReset don't require being signed out, and the device
+              revocation on success is exactly the right behavior here too. */}
+          <Link href="/reset">
+            <Button type="button" variant="secondary">{t('changePassword')}</Button>
+          </Link>
+        </Card>
+      </section>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink">{t('devicesTitle')}</h2>

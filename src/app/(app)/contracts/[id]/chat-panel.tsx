@@ -4,13 +4,13 @@ import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
-interface Citation {
+export interface Citation {
   ordinal: number
   clauseId: string
   clauseNumber: string | null
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   notFound?: boolean
@@ -51,9 +51,14 @@ function renderWithCitations(content: string, citations: Citation[]) {
   })
 }
 
-export function ChatPanel({ contractId }: { contractId: string }) {
+// initialMessages is fetched server-side by the contract page and handed in
+// here so a reload shows real history immediately -- previously ChatPanel
+// always mounted with an empty list, so existing chat_messages/citations
+// were fully intact in the database but never loaded back into view (see
+// qa/FINDINGS.md, Sub-project 4's third QA pass).
+export function ChatPanel({ contractId, initialMessages = [] }: { contractId: string; initialMessages?: ChatMessage[] }) {
   const t = useTranslations('contracts')
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)

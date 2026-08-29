@@ -6,6 +6,7 @@ import { ClauseRow } from '@/components/ui/clause-row'
 import { Card } from '@/components/ui/card'
 import { AnalyzeButton } from './analyze-button'
 import { ChatPanel } from './chat-panel'
+import { buildChatHistory } from '@/lib/chat/build-history'
 
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
 
@@ -51,6 +52,32 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
         .select('id, clause_id, severity, title, reason')
         .eq('analysis_id', analysis.id)
     : { data: null }
+
+  const { data: chat } = await supabase.from('chats').select('id').eq('contract_id', id).maybeSingle()
+  const { data: chatMessages } = chat
+    ? await supabase
+        .from('chat_messages')
+        .select('id, role, content, not_found')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: true })
+    : { data: null }
+
+  const messageIds = (chatMessages ?? []).map((m) => m.id)
+  const { data: citationRows } = messageIds.length
+    ? await supabase.from('citations').select('message_id, ordinal, clause_id').in('message_id', messageIds)
+    : { data: null }
+  const clauseIds = [...new Set((citationRows ?? []).map((c) => c.clause_id))]
+  const { data: citedClauses } = clauseIds.length
+    ? await supabase.from('clauses').select('id, clause_number').in('id', clauseIds)
+    : { data: null }
+  const clauseNumberById = new Map((citedClauses ?? []).map((c) => [c.id, c.clause_number]))
+
+  const initialMessages = buildChatHistory(
+    (chatMessages ?? []) as Array<{ id: string; role: 'user' | 'assistant'; content: string; not_found: boolean }>,
+    citationRows ?? [],
+    clauseNumberById,
+    t('chat.notFound'),
+  )
 
   const severityByClause = new Map<string, 'high' | 'medium' | 'low'>()
   for (const f of findings ?? []) {
@@ -170,7 +197,7 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
 
       {contract.status === 'ready' && !!clauses?.length && (
         <div className="mt-6">
-          <ChatPanel contractId={id} />
+          <ChatPanel contractId={id} initialMessages={initialMessages} />
         </div>
       )}
     </main>

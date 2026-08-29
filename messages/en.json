@@ -154,6 +154,7 @@
     "switchLanguage": "Switch language",
     "nav": {
       "contracts": "Contracts",
+      "help": "Help",
       "team": "Team",
       "security": "Security",
       "signOut": "Sign out"
@@ -161,6 +162,9 @@
   },
   "security": {
     "title": "Security",
+    "passwordTitle": "Password",
+    "passwordHint": "Change the password used to sign in.",
+    "changePassword": "Change password",
     "devicesTitle": "Trusted devices",
     "devicesEmpty": "No trusted devices.",
     "unknownDevice": "Unknown device",
@@ -203,6 +207,19 @@
       "invalid_email": "Enter a valid email address.",
       "not_authorized": "You don't have permission to do that.",
       "unknown": "Something went wrong. Please try again."
+    }
+  },
+  "help": {
+    "title": "Help",
+    "subtitle": "Ask how Aqd works. This assistant can't see your contracts — open a contract and use its own chat for questions about its content.",
+    "empty": "Ask a question about using Aqd — uploading, analysis, team roles, security, and so on.",
+    "placeholder": "Ask a question…",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "errors": {
+      "ai_disabled": "Help isn't configured yet. Add an API key to enable it.",
+      "quota_exceeded": "The AI provider's daily quota is exhausted for this model. Try again after it resets, or switch model tiers.",
+      "unknown": "Something went wrong. Try again."
     }
   }
 }

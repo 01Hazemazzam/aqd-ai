@@ -699,3 +699,43 @@ one pair of fixtures.
 - `tests/ingest/segment.test.ts` (existing suite, caught a real regression in this pass) plus a new
   case in `tests/ingest/advanced-contract-test.test.ts` — the preamble clause captures both party
   names and the numbered clauses still start correctly at 1
+
+---
+
+## Sub-project 5 completion: product helper, chat history, e2e snapshots
+
+🟢 **Product helper assistant, live-verified against its own exit test.** `askProductHelper`
+deliberately queries no contract/clause/analysis/team table at all -- unlike the citation-locked
+contract chat, there is no real data in its context to leak even in principle. Three live cases
+covering the full exit test ("answers product questions and cannot answer data questions"): a real
+product question got a correct, specific answer citing the actual Settings > Team flow; a question
+naming a real uploaded contract by name got "I do not have access to your contracts or any of your
+account data..." with a redirect to that contract's own chat, and no fabricated detail; an
+off-topic general-knowledge question was correctly declined as out of scope.
+
+🟢 **Chat history not reloading on refresh -- a real gap left open in the Sub-project 4 QA passes,
+now closed.** The messages and citations were always fully intact in the database; `ChatPanel`
+just had no fetch-on-mount. Fixed by having the contract page fetch history server-side (via a new
+pure `buildChatHistory` helper, directly unit-tested) and pass it in. Live-verified on a contract
+with real prior history spanning a cited answer, a `NOT_FOUND` refusal, and an Arabic answer --
+all three render correctly after a full page reload, including the citation still pointing at the
+correct clause.
+
+⚪ **Running the e2e suite (`npm run e2e`, Playwright) for the first time this session surfaced 8
+visual-regression failures** -- `/login` and `/signup` snapshots were stale relative to the Google
+button + divider added earlier in this session's OAuth work (a ~4% pixel diff on each, exactly
+consistent with one added UI element). Not a bug: regenerated the golden snapshots
+(`--update-snapshots`) after confirming the current UI is correct (already live-verified separately
+during the OAuth work). Full suite is green: 24/24 e2e (auth flows, accessibility, visual), 205/212
+Vitest (the 3 failures are the same tracked quota-gated tests, plus 4 that `describe.skipIf` when
+no key is present), `tsc --noEmit` clean, `next build` clean.
+
+**Regression tests added:**
+- `tests/ai/product-helper-prompt.test.ts` — the prompt instructs refusing/redirecting data
+  questions, never fabricating, and actually describes real Aqd features
+- `tests/app/help-actions.test.ts` — `askProductHelper` calls the `cheap` tier correctly, classifies
+  429/disabled errors the same way as analysis and chat, and short-circuits a blank question
+- `tests/chat/build-history.test.ts` — a `not_found` row renders the translated refusal text (not
+  the literal persisted `"NOT_FOUND"` sentinel), citations attach to the right message with clause
+  numbers resolved, an unanswered (failed) question shows with no citations rather than throwing,
+  and an orphaned citation resolves to a null clause number rather than crashing
