@@ -177,13 +177,20 @@ describe('aiComplete in the current (keyless) deployment state', () => {
   it('throws AiDisabledError rather than making a network call', async () => {
     const originalAnthropic = process.env.ANTHROPIC_API_KEY
     const originalGemini = process.env.GEMINI_API_KEY
+    // A real OPENROUTER_API_KEY may be present in .env.local -- cleared too,
+    // or aiComplete's fallback (added for the tracked quota ceiling) would
+    // make a real network call here instead of throwing immediately, same
+    // insulation already applied in tests/ai/router.test.ts.
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.GEMINI_API_KEY
+    delete process.env.OPENROUTER_API_KEY
     try {
       await expect(aiComplete('main', 'sys', 'user')).rejects.toBeInstanceOf(AiDisabledError)
     } finally {
       if (originalAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = originalAnthropic
       if (originalGemini !== undefined) process.env.GEMINI_API_KEY = originalGemini
+      if (originalOpenRouter !== undefined) process.env.OPENROUTER_API_KEY = originalOpenRouter
     }
   })
 })

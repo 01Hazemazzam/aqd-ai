@@ -1,23 +1,18 @@
 // tests/auth/email.test.ts
 //
-// User-reported "signup is not sending verification emails," with an
-// explicit instruction that the dev-mode on-screen code does not count as
-// verification. Root cause, confirmed by reading .env.local directly:
-// RESEND_API_KEY is unset in this environment -- there is no email provider
-// configured at all, so sendCodeEmail correctly takes its documented
-// dev-mode fallback. That's an external blocker (no key available in this
-// environment), not fixable by a code change. What IS verifiable without a
-// real key: that the Resend SDK call itself is shaped correctly (right
-// method, right payload fields, matching resend@6.24.0's CreateEmailOptions
-// type) so a real key would actually work once added, and that a rejected
-// send degrades to `false` rather than throwing and stranding the caller.
-//
-// A second, independent blocker worth surfacing even with a real key:
-// EMAIL_FROM="Aqd <auth@example.com>" in .env.local uses example.com, a
-// reserved documentation domain. Resend requires the sending domain to be
-// verified via DNS in the account dashboard -- example.com can never be
-// verified, so real delivery would still fail with an unverified-domain
-// error until EMAIL_FROM points at a real, DNS-verified domain.
+// Originally written when RESEND_API_KEY was unset in this environment --
+// confirmed then that the SDK call itself was shaped correctly and that a
+// send failure degraded to `false` rather than throwing. Once a real key
+// was configured and live-tested, a real bug surfaced that this file's own
+// mocking had been hiding: the Resend SDK does NOT throw on an API-level
+// failure (bad domain, rate limit, an invalid recipient) -- it resolves
+// normally with `{ data: null, error }`. A real send to a sandbox-
+// restricted recipient came back exactly this way, and the code -- and this
+// test file -- only ever checked for a throw, so a genuine rejected send
+// was being reported as sent. Fixed in email.ts to check `error` on the
+// resolved result; the tests below now mock the SDK's real contract instead
+// of a reject, plus a separate case for a genuine network-level throw
+// (still handled, now correctly a secondary path rather than the only one).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const send = vi.fn()
@@ -51,23 +46,43 @@ describe('sendCodeEmail', () => {
     })
   })
 
-  it('returns false rather than throwing when Resend rejects the send, and logs the real reason', async () => {
+  it('returns false when Resend resolves with an error (its real failure contract, not a throw), and logs it', async () => {
     vi.stubEnv('RESEND_API_KEY', 'test-key')
-    vi.stubEnv('EMAIL_FROM', 'Aqd <auth@example.com>')
-    send.mockRejectedValue(new Error('403: The example.com domain is not verified'))
+    vi.stubEnv('EMAIL_FROM', 'Aqd <onboarding@resend.dev>')
+    // The exact shape of a real, live Resend response for a sandbox-domain
+    // send to a non-account-owner recipient -- confirmed against the actual
+    // API, not guessed.
+    send.mockResolvedValue({
+      data: null,
+      error: {
+        name: 'validation_error',
+        message: 'You can only send testing emails to your own email address (owner@example.com). To send emails to other recipients, please verify a domain at resend.com/domains, and change the `from` address to an email using this domain.',
+      },
+    })
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const { sendCodeEmail } = await import('@/lib/auth/email')
-    const ok = await sendCodeEmail('user@test.local', '482913', 'ar')
+    const ok = await sendCodeEmail('someone-else@test.local', '482913', 'ar')
 
     expect(ok).toBe(false)
-    // Previously swallowed entirely -- this is what would make an
-    // EMAIL_FROM/domain-verification failure diagnosable once a real key is
-    // configured, instead of a silent, untraceable non-delivery.
     expect(errorSpy).toHaveBeenCalledWith(
-      '[sendCodeEmail] Resend send failed:',
-      expect.stringContaining('domain is not verified'),
+      '[sendCodeEmail] Resend rejected the send:',
+      expect.stringContaining('You can only send testing emails to your own email address'),
     )
+    errorSpy.mockRestore()
+  })
+
+  it('returns false rather than throwing on a genuine network-level exception', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    vi.stubEnv('EMAIL_FROM', 'Aqd <onboarding@resend.dev>')
+    send.mockRejectedValue(new Error('fetch failed: ECONNRESET'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { sendCodeEmail } = await import('@/lib/auth/email')
+    const ok = await sendCodeEmail('user@test.local', '482913', 'en')
+
+    expect(ok).toBe(false)
+    expect(errorSpy).toHaveBeenCalledWith('[sendCodeEmail] Resend send failed:', expect.stringContaining('ECONNRESET'))
     errorSpy.mockRestore()
   })
 
@@ -81,5 +96,27 @@ describe('sendCodeEmail', () => {
     expect(send).not.toHaveBeenCalled()
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('482913'))
     consoleSpy.mockRestore()
+  })
+})
+
+describe('sendInviteEmail', () => {
+  it('returns false when Resend resolves with an error, same non-throwing contract as sendCodeEmail', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    vi.stubEnv('EMAIL_FROM', 'Aqd <onboarding@resend.dev>')
+    send.mockResolvedValue({
+      data: null,
+      error: { name: 'validation_error', message: 'You can only send testing emails to your own email address (owner@example.com).' },
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { sendInviteEmail } = await import('@/lib/auth/email')
+    const ok = await sendInviteEmail('teammate@test.local', 'Acme Legal', 'https://app/onboarding?invite=abc', 'en')
+
+    expect(ok).toBe(false)
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sendInviteEmail] Resend rejected the send:',
+      expect.stringContaining('You can only send testing emails to your own email address'),
+    )
+    errorSpy.mockRestore()
   })
 })

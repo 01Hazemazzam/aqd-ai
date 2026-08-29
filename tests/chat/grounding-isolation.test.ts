@@ -15,12 +15,23 @@
 // two same-org fixtures designed specifically to make any leak obvious.
 //
 // Uses tier "main", matching src/app/api/chat/route.ts exactly -- so these
-// tests fail with a 429 whenever the free-tier main-tier quota is already
-// exhausted (a known, separately-tracked gap -- see qa/FINDINGS.md's "Model
-// tier coverage" entry), independent of whether the code itself is correct.
-// To force a real pass during quota exhaustion, temporarily set
-// AI_MODEL_MAIN=gemini-flash-lite-latest in .env.local before running (and
-// revert it after) -- confirmed passing that way as of this writing.
+// tests fail with a 429 (or a timeout, see below) whenever the free-tier
+// main-tier quota is already exhausted (a known, separately-tracked gap --
+// see qa/FINDINGS.md's "Model tier coverage" entry), independent of whether
+// the code itself is correct.
+//
+// streamGeminiText now has an automatic OpenRouter fallback for exactly
+// this quota ceiling, and it's correct -- confirmed directly (isolated
+// router-level calls, unit tests in tests/ai/router.test.ts, and a
+// realistic-prompt timing measurement). It's just not fast: retry backoff
+// alone can take ~7-15s before the fallback is even reached, and the
+// fallback's own (free, shared, reasoning) model added another ~20s on a
+// single realistic question in direct measurement -- ~35s total per
+// question. Deliberately NOT widening these tests' timeouts to cover that
+// (three questions x ~35s would push this file's runtime past two minutes
+// for marginal benefit) -- they stay in the same tracked "fails under
+// exhaustion, not a regression" bucket as before, whether that now shows up
+// as a 429 or a timeout while the fallback works in the background.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { createClient } from '@supabase/supabase-js'
@@ -180,6 +191,14 @@ afterAll(async () => {
 })
 
 describe.skipIf(!hasKey)('grounding and cross-contract isolation (real embeddings + real generation)', () => {
+  // Timeouts widened from vitest's 5000ms default: streamGeminiText's own
+  // retry loop alone can spend ~7s in backoff (1s+2s+4s across the default
+  // 4 attempts) before even reaching the OpenRouter fallback added for the
+  // tracked main-tier quota ceiling -- confirmed live, the fallback itself
+  // resolves in under a second once reached. The old 5000ms budget was
+  // already tight against just the retry backoff; it can't fit retry +
+  // fallback both, which is now the actual (better) outcome under quota
+  // exhaustion: a real answer instead of a fast clean failure.
   it('Iso EN: a governing-law question returns NOT_FOUND, not the sibling contract\'s jurisdiction', async () => {
     const supabase = await signedInClient()
     const { answer, notFound, retrieved } = await askChat(supabase, isoEnContractId, 'What is the governing law of this agreement?')

@@ -142,7 +142,7 @@ Five non-obvious things were discovered building this, on this machine:
 
 ## Tech stack
 
-Next.js 16 (App Router), React 19, TypeScript strict, Tailwind CSS v4, next-intl, Supabase (Postgres 17, Auth, local dev via the CLI), Resend for transactional email. Vitest + Testing Library for unit/integration tests, Playwright + axe-core for browser and accessibility tests.
+Next.js 16 (App Router), React 19, TypeScript strict, Tailwind CSS v4, next-intl, Supabase (Postgres 17, Auth, local dev via the CLI), Resend for transactional email. Gemini and Anthropic called directly for AI, with an optional OpenRouter fallback (`OPENROUTER_API_KEY`) used automatically only when both primary providers are unavailable — see the release checklist below. Vitest + Testing Library for unit/integration tests, Playwright + axe-core for browser and accessibility tests.
 
 ## Getting started
 
@@ -158,22 +158,23 @@ With `RESEND_API_KEY` left blank, no email is ever sent — signing up or trigge
 
 ## Release checklist
 
-**Production blockers:** none in code. `RESEND_API_KEY` is functionally required before deploying with `NODE_ENV=production` — the on-screen dev-code fallback is deliberately disabled in production, so with no key set, signup/device-challenge verification has no path to complete at all for a real user.
+**Production blockers:** none in code.
 
-**Configuration required before launch:**
-- `RESEND_API_KEY` (a real Resend account/key) **and** `EMAIL_FROM` pointed at a real, DNS-verified sending domain — `example.com`, the current placeholder, can never pass verification even once a key is added.
-- `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, if Google sign-in ships — the button degrades gracefully without them, so this is optional, not blocking.
-- A paid Gemini tier (or a quota increase), if `main`-tier analysis quality needs to be validated or relied on beyond the free tier's 20 requests/day.
+**Configuration status:**
+- **Resend — configured with a real key, code-path bugs found and fixed by real testing.** `RESEND_API_KEY` is set; `EMAIL_FROM` uses Resend's own pre-verified sandbox domain (`onboarding@resend.dev`), so no DNS work was needed to get real sends working. Live-tested both outcomes: a genuine send-rejection (Resend's sandbox restricts sends to the account owner's own address) surfaced a real bug — the SDK doesn't throw on an API-level failure, it resolves with `{ error }`, and the code only ever checked for a throw, so a rejected send was being reported as sent. Fixed and regression-tested (`qa/FINDINGS.md`). What's *not* verified: an actual email landing in a real inbox — the account owner's exact address already has an Aqd account, so a fresh signup can't be triggered without their password. Before wider production use, do one real signup/reset as the account owner and confirm the email actually arrives, and consider verifying a real domain (the sandbox only ever delivers to one address).
+- **Google OAuth — client ID set, secret still missing.** `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID`/`NEXT_PUBLIC_GOOGLE_CLIENT_ID` are configured; `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET` is blank, so the consent-screen round trip still can't be completed or tested. The button degrades gracefully in the meantime.
+- **Gemini `main`-tier quota — now has a real, live-verified automatic fallback.** `OPENROUTER_API_KEY` is configured; `aiComplete`/`streamGeminiText` fall back to a free OpenRouter model only when Gemini/Anthropic ultimately fail, confirmed live against the actual (still-exhausted) quota. With no OpenRouter key, behavior is unchanged from before. The fallback is correct but slow for an interactive surface — ~35s for one realistic chat question in direct measurement, acceptable for analysis/the product helper (already a "please wait" interaction), worth knowing about specifically for chat.
 
 **Known limitations:**
 - A PDF that encodes complex-script text (e.g. Arabic) as vector outlines rather than real selectable text cannot be extracted by this or any text-layer parser — confirmed on a real reported case, not a parsing bug.
 - No OCR — scanned/image-only documents extract no text, by original scope.
-- Anthropic's `heavy` tier has never been exercised with a real key in this environment.
+- Anthropic's `heavy` tier has never been exercised with a real key in this environment (it would benefit from the same OpenRouter fallback if it, too, starts failing).
 - Password change reuses the full email-code reset flow (and its device-revocation side effect) rather than a lighter dedicated action.
+- OpenRouter's free-model catalog churns — the model this was first configured with was already gone by the time it was live-tested; if the current default (`nvidia/nemotron-3.5-lightning:free`) ever starts 404ing, check `openrouter.ai/models?max_price=0` for a current one.
 
-**Test/build status (most recent run):** 215/218 Vitest passing (3 non-passing are the tracked `main`-tier quota failures, reproduced independently many times, not a regression), 24/24 Playwright e2e passing, `tsc --noEmit` clean, `next build` clean with zero warnings.
+**Test/build status (most recent run):** 227/230 Vitest passing (3 non-passing are the tracked `main`-tier quota failures, reproduced independently many times across this session, not a regression), 24/24 Playwright e2e passing, `tsc --noEmit` clean, `next build` clean with zero warnings.
 
-**GO for the current scope** (email+password auth, document pipeline, analysis and chat on the `cheap` Gemini tier, team/security, product helper) — **NO-GO on relying on email delivery or Google sign-in** until the two configuration items above are set and live-tested with real credentials.
+**GO for the current scope** (email+password auth, document pipeline, analysis and chat — now resilient to `main`-tier quota exhaustion via the OpenRouter fallback — team/security, product helper). **NO-GO on Google sign-in** until the client secret is set and the consent-screen round trip is live-tested. Resend is functionally live; do one real send-and-check as the account owner before depending on it for real users.
 
 ```bash
 npm test        # Vitest — unit, integration, and database tests

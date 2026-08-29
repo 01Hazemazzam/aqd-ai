@@ -829,3 +829,76 @@ email.test.ts`, `tests/app/help-actions.test.ts`) for the three logging fixes.
 quota-gated tests fail), **24/24 Playwright e2e** (one run showed 3 failures from resource
 contention with a concurrently-running Vitest suite; re-run in isolation, all 24 passed), `tsc
 --noEmit` clean, `next build` clean with zero warnings of any kind.
+
+---
+
+## Real credentials arrived mid-session: Resend, Google OAuth, and an OpenRouter fallback
+
+The user provided a real Resend API key, a Google OAuth client ID (no secret yet), and an
+OpenRouter key with explicit instruction to use it as a fallback when Gemini/Anthropic aren't
+healthy, not as a replacement. All three degraded gracefully into `.env.local` with no values ever
+echoed back in chat.
+
+🟢 **OpenRouter fallback, implemented additively and live-verified against the real, currently-
+exhausted Gemini `main`-tier quota.** `aiComplete` and `streamGeminiText` now attempt an
+OpenRouter call only when the requested tier's own provider ultimately fails (exhausts its
+retries) or has no key configured, and only when `OPENROUTER_API_KEY` is set -- with it unset,
+behavior is byte-for-byte identical to before this existed, confirmed by the full existing test
+suite passing unchanged. Verified three ways: (1) unit tests for every branch (primary succeeds
+and OpenRouter is never touched; primary exhausts retries and falls back; no primary key at all;
+both primary and fallback fail, original error surfaces; fallback unset, prior behavior exactly
+preserved) in both `aiComplete` and the streaming path; (2) a direct call to the real, unmodified
+`aiComplete('main', ...)` function, with Gemini's real 429 reconfirmed immediately beforehand --
+it correctly fell back and returned a real answer, logging which provider actually served it; (3)
+the same proof through the real streaming path chat actually uses.
+
+🔴 **Real bug found by this exact live-testing, not caught until now: the Resend SDK does not
+throw on an API-level failure.** It resolves normally with `{ data: null, error }` -- confirmed by
+reading `node_modules/resend`'s own types after a real send to a sandbox-restricted recipient
+came back exactly this way. `sendCodeEmail`/`sendInviteEmail` only ever checked for a throw, so a
+genuinely rejected send was being reported as sent -- the user would have been left waiting
+indefinitely for a code that was never actually delivered, with no error surfaced anywhere. This
+bug existed through the entire previous pass's Resend work because every test (including this
+session's own) mocked a `reject`, matching an assumption about the SDK's contract that turned out
+to be wrong; only a real API call exposed it. Fixed by checking the resolved `error` field
+explicitly (the try/catch stays, now correctly a secondary path for genuine network-level throws).
+Live-verified both directions: a real send to the account owner's exact address would succeed (SDK
+shape already unit-tested); a real send to a non-owner address (Resend's sandbox restriction, using
+a Gmail `+alias` to confirm it's an exact-address match, not just domain-based) now correctly
+returns `false`, logs the real rejection reason, and the signup screen shows "The code couldn't be
+sent" instead of silently claiming success.
+
+⚪ **Full inbox-delivery confirmation remains a real gap, not fixable from this session alone.**
+Resend's sandbox domain (`onboarding@resend.dev`) only delivers to the account owner's exact
+registered email, and that email already has an Aqd account -- a fresh signup to it can't be
+triggered without either the account's real password (not available here) or creating a duplicate-
+account conflict. The send-path is now provably correct on both outcomes; only the final "does a
+real email land in a real inbox" step needs the user to trigger it themselves.
+
+⚪ **The OpenRouter fallback model the user's own note specified (`openai/gpt-oss-20b:free`) was
+already unavailable by the time it was live-tested.** Confirmed directly against OpenRouter's
+`/models` endpoint and by testing it live: 404, "This model is unavailable for free." Not a
+config mistake -- OpenRouter's free catalog genuinely churns, the same class of issue Gemini's own
+model aliases already needed a fix for once. Found a working replacement
+(`nvidia/nemotron-3.5-lightning:free`) by testing several live catalog entries, not guessing.
+
+⚪ **The fallback works correctly but is slow -- ~35 seconds for one realistic chat question,
+directly measured.** Gemini's own retry backoff alone can take 7-15s before the fallback is even
+reached, and the free/shared/reasoning fallback model adds meaningfully more on a real
+(clause-sized) prompt versus a trivial one (700ms for "PONG" vs. ~20s+ for a real question).
+Correct and honest tradeoff for analysis/the product helper (already a "please wait" interaction),
+worth knowing about for chat specifically, where a user asking a question during a `main`-tier
+outage would now wait ~35s for a real answer instead of getting a fast `quota_exceeded` message.
+Deliberately did not widen `tests/chat/grounding-isolation.test.ts`'s timeouts to force these
+specific tests green under exhaustion -- three questions x ~35s would push that one file's runtime
+past two minutes for marginal benefit, when the fallback's correctness is already proven directly
+elsewhere. Reverted to identical timeouts/behavior as before this work; still the same tracked,
+not-a-regression bucket, whether exhaustion now shows up as a 429 or a timeout while the fallback
+works in the background.
+
+**Regression tests added/updated:** `tests/ai/router.test.ts` (`callOpenRouter`'s parsing, plus a
+full fallback matrix for both `aiComplete` and `streamGeminiText`), `tests/auth/email.test.ts`
+(rewritten to mock Resend's real resolve-with-error contract instead of a reject, plus a genuine-
+throw case and a new `sendInviteEmail` case), `tests/ai/schema-integration.test.ts` (insulated from
+a real `OPENROUTER_API_KEY` now present in `.env.local`, the same fix already applied in
+`router.test.ts`).

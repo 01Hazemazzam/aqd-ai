@@ -22,18 +22,25 @@ export async function sendCodeEmail(to: string, code: string, locale: Locale): P
     return process.env.NODE_ENV !== 'production'
   }
   try {
-    await resend.emails.send({
+    // The SDK does NOT throw on an API-level failure (bad domain, rate
+    // limit, an invalid recipient) -- it resolves normally with
+    // `{ data: null, error }`. Confirmed live: a real send to a sandbox-
+    // restricted recipient resolved successfully by await's standards while
+    // silently carrying a validation_error, and the old code -- checking
+    // only for a throw -- reported it as sent. `error` must be checked
+    // explicitly; the try/catch stays for genuine network-level throws.
+    const { error } = await resend.emails.send({
       from: process.env.EMAIL_FROM!,
       to,
       subject: SUBJECT[locale],
       html: BODY[locale](code),
     })
+    if (error) {
+      console.error('[sendCodeEmail] Resend rejected the send:', error.message)
+      return false
+    }
     return true
   } catch (err) {
-    // Previously fully swallowed -- a real send failure (bad domain, rate
-    // limit, network error) left zero trace anywhere. Matters especially
-    // once a real RESEND_API_KEY is configured: this is the only place that
-    // would ever reveal an EMAIL_FROM domain-verification failure.
     console.error('[sendCodeEmail] Resend send failed:', err instanceof Error ? err.message : err)
     return false
   }
@@ -58,12 +65,16 @@ export async function sendInviteEmail(to: string, orgName: string, url: string, 
     return process.env.NODE_ENV !== 'production'
   }
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: process.env.EMAIL_FROM!,
       to,
       subject: INVITE_SUBJECT[locale](orgName),
       html: INVITE_BODY[locale](orgName, url),
     })
+    if (error) {
+      console.error('[sendInviteEmail] Resend rejected the send:', error.message)
+      return false
+    }
     return true
   } catch (err) {
     console.error('[sendInviteEmail] Resend send failed:', err instanceof Error ? err.message : err)
