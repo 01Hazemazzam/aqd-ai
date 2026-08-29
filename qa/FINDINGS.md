@@ -238,7 +238,12 @@ if a tier resolves to a non-Gemini provider, since no Anthropic streaming implem
 and no Anthropic key has ever been configured in this environment. Embedding generation
 (`embed.ts`, `gemini-embedding-001`) was exercised on whatever tier/quota was live at the time and
 is model-fixed (not tier-selectable), so this gap is specific to the *generation* step of chat,
-not retrieval.
+not retrieval. **Re-checked a third time at the start of QA pass 3** with the same one-call-then-429
+result — quota still exhausts almost immediately on `main`, on a third distinct day. This is now a
+consistent, reproducible pattern rather than a one-off, but the *cause* remains unexplained (see the
+original entry above). Tracked as an open QA item for the eventual release, not a blocker for
+Sub-project 5 — per explicit instruction, development is not gated on same-day `main`-tier
+availability.
 
 ---
 
@@ -323,6 +328,78 @@ streaming has actually started and tokens may already be on their way to the cli
 not retried, matching the existing behavior for mid-stream errors. Regression-tested: retries a
 429 and streams normally once a later attempt succeeds, gives up after exhausting attempts on a
 persistent 429, and does not retry a non-retryable failure (e.g. 400).
+
+---
+
+## Sub-project 4 QA pass 3 — final focused check before Sub-project 5
+
+Scope: contract_id + org_id retrieval scoping, a 2-3 clause end-to-end citation check, an
+adversarial "semantically close but factually absent" NOT_FOUND test, re-confirming the
+cross-language fix from pass 2 with fresh examples in both directions, a long streamed answer's
+citations surviving stream completion, and refresh/reopen behavior. `main` tier checked again
+first (see Model tier coverage above — still exhausted almost immediately); rest of this pass ran
+on the `cheap`-tier override, reverted afterward.
+
+### Retrieval scoped to both contract_id and org_id
+🟢 **Verified by code review + existing tests, no gap found.** `match_clauses()` filters
+`contract_id` explicitly in its `where` clause (`supabase/migrations/0012_chat.sql`), and — because
+it is plain SQL, not `security definer` — the `clauses_org_all` RLS policy (`org_id =
+jwt_org_id()`) applies to every row it scans on top of that, scoping by org even though the
+function's SQL never mentions `org_id` itself. `route.ts` adds a third layer before retrieval even
+runs: the initial `contracts` lookup is itself RLS-gated, so a `contractId` from another org 404s
+before `match_clauses` is ever called. The contract_id dimension is proven by pass 2's new
+same-org cross-contract test; the org_id dimension is proven by pass 1's cross-org test. Both
+dimensions are independently covered — no single test proves both at once, but the combination of
+the two, plus the RLS policy definition itself, is a complete proof, so no new test was added.
+
+### 2-3 clause end-to-end citation check
+🟢 **Verified live.** "What are my confidentiality, indemnification, and liability obligations
+under this agreement?" against `QA-EN` produced a 3-paragraph answer citing `[1]` (Confidentiality,
+real `clause_number` 6), `[2]` (Indemnification, `clause_number` 8, cited twice in the text), and
+`[3]` (Limitation of Liability, `clause_number` 7) — all three verified by joining the persisted
+`citations` rows back to `clauses`. The repeated `[2]` citation persisted as a single deduplicated
+row, live confirmation of `resolveCitations`'s dedup behavior (unit-tested in pass 2) actually
+firing in the real request path.
+
+### Adversarial NOT_FOUND (semantically close, factually absent)
+🟢 **Verified live, English and Arabic, on two different fixtures.** `QA-EN`: "What interest rate
+or late-payment penalty applies if Licensee pays an invoice after the due date?" — the Fees clause
+(payment terms, 30-day due date) is the obvious semantic neighbor and was almost certainly in the
+retrieved set, but it states no penalty or interest rate, and the answer was `NOT_FOUND`, not a
+fabricated rate. `QA-AR`: "ما هي نسبة الفائدة على التأخر في سداد الأتعاب؟" (what interest rate
+applies to late payment of fees) against the fee clause (a flat 25,000 KWD lump sum, no interest
+mentioned) — also correctly `NOT_FOUND`. Confirms the model isn't defaulting to "use the nearest
+retrieved clause anyway" when the specific fact asked for isn't actually stated in it.
+
+### Cross-language fix re-confirmed (fresh examples, both directions)
+🟢 **Holds.** Re-tested pass 2's fix with two new question/clause pairs on `QA-MIX`, not the same
+ones already covered: an English question about governing law/jurisdiction, grounded in Arabic
+clause 6, correctly answered in English ("This agreement is governed by the laws of the United
+Arab Emirates, and the Dubai courts have jurisdiction..." `[1]`). An Arabic question about the
+liability cap, grounded in English clause 5, correctly answered in Arabic. Both directions correct,
+both citations verified against the real clause.
+
+### Long answer / citations survive stream completion
+🟢 **Verified live** (same run as the 2-3 clause check above — a 3-paragraph, 3-citation answer is
+also a good long-stream case). The full answer text persisted intact in `chat_messages.content`
+(not truncated or cut off mid-stream), and all citations were correctly resolved and inserted only
+after the stream's `done` event, per `route.ts`'s existing design (`persistAndClose` runs once,
+after the full text has accumulated, not per-token) — confirmed by the persisted row containing the
+complete 3-paragraph text with citation markers intact for all three `[n]` positions.
+
+### Refresh / reopen
+🟡 **Real gap found: data is correct, the UI does not show it.** Reloading a contract page whose
+chat already has messages and citations shows a completely empty chat panel — not stale data, not
+wrong data, just nothing, as if the conversation never happened. Confirmed this is a UI-only gap,
+not a data problem: querying `chat_messages`/`citations` directly for the same contract immediately
+after the reload shows every prior message and citation fully intact and still correctly linked to
+its real clause. Root cause is by design, not a regression: `ChatPanel` (`chat-panel.tsx`)
+initializes `useState<ChatMessage[]>([])` and has no fetch-on-mount; `page.tsx` never queries
+`chat_messages` server-side either. There is currently no code path anywhere that loads existing
+chat history into the UI — the panel has only ever been exercised as a single-session, ask-and-see
+experience. **Not fixed this round** — this is a real (if small) feature addition, not a
+same-shape bug fix like the CRLF/retry/language issues found in earlier passes, so it's flagged
+here as a tracked gap for a deliberate decision rather than folded into "chatbot bug fixes."
 
 ---
 
