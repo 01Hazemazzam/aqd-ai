@@ -2,7 +2,7 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { embedTexts, toPgVector } from '@/lib/ai/embed'
 import { streamGeminiText, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
-import { chatPrompt, isNotFoundAnswer, resolveCitations, type RetrievedClause } from '@/lib/ai/prompts'
+import { chatPrompt, isNotFoundAnswer, resolveCitations, repairHebrewArabicHomoglyphs, type RetrievedClause } from '@/lib/ai/prompts'
 
 const MATCH_COUNT = 6
 
@@ -99,9 +99,14 @@ export async function POST(request: Request) {
           send('token', { text: chunk.textDelta })
         }
 
-        const notFound = isNotFoundAnswer(fullText)
+        // Persisted/re-rendered text is repaired even though the live-streamed
+        // tokens already reached the client as-is -- see the comment on
+        // repairHebrewArabicHomoglyphs for why this is a narrow, targeted fix
+        // rather than a token-level one.
+        const repairedText = repairHebrewArabicHomoglyphs(fullText)
+        const notFound = isNotFoundAnswer(repairedText)
         const matchesWithId = retrieved.map((m) => ({ id: m.id, clauseNumber: m.clause_number, lang: m.lang, body: m.body }))
-        await persistAndClose(notFound ? 'NOT_FOUND' : fullText, notFound, matchesWithId)
+        await persistAndClose(notFound ? 'NOT_FOUND' : repairedText, notFound, matchesWithId)
       } catch (err) {
         const errorCode = err instanceof AiDisabledError ? 'ai_disabled' : err instanceof AiUpstreamError ? 'upstream_failed' : 'unknown'
         send('error', { error: errorCode })

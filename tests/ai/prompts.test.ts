@@ -11,6 +11,7 @@ import {
   isNotFoundAnswer,
   extractCitationOrdinals,
   resolveCitations,
+  repairHebrewArabicHomoglyphs,
 } from '@/lib/ai/prompts'
 
 describe('extractJson', () => {
@@ -39,6 +40,34 @@ describe('extractJson', () => {
 
   it('still fails on JSON that is broken for a reason other than a stray backslash', () => {
     expect(() => extractJson('summary', '{"summary": "unterminated')).toThrow(MalformedAiResponseError)
+  })
+
+  it('normalizes a stray Hebrew character inside otherwise-Arabic JSON text before parsing', () => {
+    // A real Gemini response substituted Hebrew resh (U+05E8) for Arabic reh
+    // (U+0631) mid-word in an otherwise-correct Arabic summary. This is a
+    // JSON.parse-safe character either way (it isn't the bug that breaks
+    // parsing) -- the point of this fix is the VALUE coming out clean, not
+    // parse success.
+    const broken = '{"summary": "ويحق للרخص له"}'
+    const result = extractJson('summary', broken) as { summary: string }
+    expect(result.summary).not.toContain('ר')
+    expect(result.summary).toBe('ويحق للرخص له')
+  })
+})
+
+describe('repairHebrewArabicHomoglyphs', () => {
+  it('replaces Hebrew resh with Arabic reh in the exact observed failure shape', () => {
+    expect(repairHebrewArabicHomoglyphs('ويحق للרخص له')).toBe('ويحق للرخص له')
+  })
+
+  it('leaves ordinary Arabic text completely unchanged', () => {
+    const text = 'السلام عليكم ورحمة الله وبركاته'
+    expect(repairHebrewArabicHomoglyphs(text)).toBe(text)
+  })
+
+  it('leaves ordinary English/Latin text completely unchanged', () => {
+    const text = 'The governing law is the State of Delaware.'
+    expect(repairHebrewArabicHomoglyphs(text)).toBe(text)
   })
 })
 
@@ -92,9 +121,27 @@ describe('prompt builders', () => {
     expect(summaryPrompt([clause]).system.toLowerCase()).toContain('arabic')
     expect(summaryPrompt([clause]).user).not.toMatch(/\bclause\b/i)
   })
+
+  it('instructs the model to preserve document-defined references like "Exhibit A" instead of mistranslating them', () => {
+    // Regression lock for a real bug: a stored Arabic summary translated
+    // "Exhibit A" as "المعرض A" (literally "the exhibition/gallery A"),
+    // wrong legal terminology for a document reference. The instruction
+    // must name the specific wrong translation so a future prompt edit
+    // can't accidentally drop the concrete guidance for a vague one.
+    const clause = { id: 'c1', clauseNumber: '1', body: 'text' }
+    const { system } = summaryPrompt([clause])
+    expect(system).toContain('Exhibit A')
+    expect(system).toContain('معرض')
+  })
 })
 
 describe('chatPrompt', () => {
+  it('instructs the model to preserve document-defined references like "Exhibit A" instead of mistranslating them', () => {
+    const { system } = chatPrompt('q', [])
+    expect(system).toContain('Exhibit A')
+    expect(system).toContain('معرض')
+  })
+
   it('numbers retrieved clauses 1..N in retrieval order, not by clause_number', () => {
     const { system } = chatPrompt('When can this be terminated?', [
       { clauseNumber: '7', lang: 'en', body: 'Termination text.' },

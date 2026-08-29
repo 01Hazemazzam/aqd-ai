@@ -403,6 +403,88 @@ here as a tracked gap for a deliberate decision rather than folded into "chatbot
 
 ---
 
+## User-reported "critical grounding/isolation issue" — investigated, not a real leak
+
+The user independently built a 26-clause "chatbot grounding stress-test" contract and reported,
+from their own separate manual testing against the same shared dev environment: `QA-EN`'s chatbot
+answered a governing-law question with "UAE law, Dubai courts" (a contract with no governing-law
+clause at all) and answered a liability question with a "KWD 18,600" cap (`QA-EN`'s real liability
+clause states unlimited liability). They asked for root cause before any fix, with exact
+contract/clause IDs traced, plus explicit regression tests and two Arabic-quality fixes.
+
+### Investigation (systematic root-cause process, evidence before any fix)
+🟢 **No cross-contract leak found, in either the backend or the client.** Two independent
+mechanisms were checked and ruled out:
+- **Full DB audit.** Searched every `chat_messages` row in the entire database (not just `QA-EN`)
+  for "UAE"/"Dubai"/"18,600". Exactly one match existed anywhere: an assistant message on
+  **`QA-MIX`** (not `QA-EN`), generated during this session's own QA pass 3 testing, correctly
+  citing `QA-MIX`'s own real clause 6 (`القانون الحاكم: ...قوانين دولة الإمارات العربية
+  المتحدة...`). "18,600" appeared **nowhere** in the database at all. `QA-EN`'s entire chat
+  history (every row, chronological) contains no governing-law answer of any kind — every
+  governing-law-adjacent question on `QA-EN` correctly returned `NOT_FOUND`. The user's new stress-
+  test contract's own chat has exactly one row: their question, with **no assistant response at
+  all** (matches their screenshot showing "Something went wrong answering that" — a real,
+  already-tracked main-tier `429 RESOURCE_EXHAUSTED`, confirmed in the dev server log at the same
+  timestamp, not a wrong answer).
+- **Live client-side navigation test.** The user explicitly asked to check for stale chat state
+  reused after switching contracts. Reproduced directly: typed a marker string into `QA-MIX`'s chat
+  input, clicked "Back to contracts" (a real Next.js `<Link>`, not a hard reload), then clicked into
+  `QA-EN` the same way. `QA-EN`'s chat panel rendered completely fresh — no leftover marker text, no
+  leftover messages. Next.js App Router fully remounts `ChatPanel` on a dynamic-segment change via
+  client-side `<Link>` navigation; no React state survives the switch.
+- **Retrieval trace, as explicitly requested.** `match_clauses` for `QA-EN`
+  (`bc02f8f0-acae-4001-81da-ecba4c33800f`) on "What is the governing law of this agreement?" returns
+  only `QA-EN`'s own 6 clause ids (Indemnification, Amendments, Parties, Liability, Term, Renewal —
+  all ~0.58 similarity, no strong match, since the fact genuinely isn't there); `QA-MIX`'s governing
+  law clause id never appears.
+
+**Most likely explanation:** a misattribution, not a system defect — the "UAE/Dubai" answer the
+user saw was this session's own correct `QA-MIX` result, and the "18,600" figure does not
+correspond to anything the system ever actually produced. No code changed as a result of the
+investigation itself.
+
+### Regression tests added anyway (the guarantee is now durable, not just re-derived by inspection)
+🟢 New file `tests/chat/grounding-isolation.test.ts`, real embeddings + real generation against two
+fresh same-org fixtures built specifically to make a leak obvious (`Iso Test EN` — unlimited
+liability, no governing-law clause at all, mirroring `QA-EN`; `Iso Test Sibling` — a governing-law
+clause naming Ireland/Dublin and a liability clause naming exactly "KWD 18,600", so any leak of
+either fact is unambiguous, not a coincidental phrase match). All 3 pass live: governing-law
+question → `NOT_FOUND`, retrieved set never contains the sibling's clause; liability question →
+correctly reflects "unlimited", never the sibling's numeric cap; a 3-question set never surfaces
+"Ireland"/"Dublin"/"18,600" in any answer. Uses tier `main` to match `route.ts` exactly, so — like
+every other real-generation test in this suite — it fails on a 429 whenever `main` is already
+quota-exhausted; confirmed passing under the same `cheap`-tier override used throughout this
+project's QA passes.
+
+### Two real, unrelated bugs found and fixed during this same investigation
+🟢 **Hebrew/Arabic character homoglyph.** A real stored `QA-EN` summary contained a single Hebrew
+character (`ר`, U+05E8, "resh") standing in for its visually near-identical Arabic counterpart
+(`ر`, reh, U+0631) in the middle of an otherwise-correct word — a generation-time script mix-up,
+confirmed by direct codepoint inspection of the stored text. Fixed with a narrow, evidence-based
+`repairHebrewArabicHomoglyphs()` in `src/lib/ai/prompts.ts` (only the one confirmed pair, not a
+broad Hebrew-range strip that could damage legitimate text) applied in `extractJson` (summary/
+fields/risks/obligations) and on the final persisted chat answer in `route.ts`. Regression-tested;
+does not touch the character in the middle of a live token stream, only the persisted/re-rendered
+text, since buffering every token to scan for one rare character isn't proportionate.
+🟢 **"Exhibit A" mistranslated as "المعرض A".** The same stored `QA-EN` summary translated "Exhibit
+A" as "المعرض A" — literally "the exhibition/gallery A", wrong legal terminology for a document
+reference. Added an explicit instruction to `HARD_RULES` and `chatPrompt` naming this exact wrong
+translation, so document-defined references (Exhibit A, Schedule 1, etc.) are kept as-is rather
+than translated as ordinary nouns. Live-verified against a synthetic Arabic clause referencing
+"Exhibit A": before the fix this is the same failure mode already observed; after the fix, the
+regenerated summary correctly kept "Exhibit A" untranslated. Regression-tested in both
+`summaryPrompt` and `chatPrompt`.
+
+### Observed but not investigated further this round
+⚪ A prior `QA-EN` summary (all-English contract) was written entirely in Arabic — linguistically
+unexpected but not incorrect per se (no rule requires matching the *majority* language of a
+multi-clause document, only each clause's own language, and a summary spans all clauses). Not
+reproduced on the verification re-run for this investigation, which correctly produced an English
+summary for the same all-English contract. Noted here rather than chased, since it's outside the
+scope of the reported issue and didn't reproduce.
+
+---
+
 ## Regression tests added (locking in fixes found during this validation)
 
 - `tests/ai/prompts.test.ts` — stray-backslash JSON repair (exact failure shape)
@@ -436,6 +518,16 @@ here as a tracked gap for a deliberate decision rather than folded into "chatbot
 - `tests/ai/router.test.ts` — `streamGeminiText` retries a retryable initial-request failure (429)
   and streams normally on a later success, gives up after exhausting attempts on a persistent 429,
   and does not retry a non-retryable failure
+- `tests/chat/grounding-isolation.test.ts` (new) — real embeddings + real generation, two fresh
+  same-org fixtures: a governing-law question on the fixture with no such clause returns
+  `NOT_FOUND` and never retrieves the sibling contract's clause; a liability question correctly
+  reflects the fixture's own "unlimited" clause, never the sibling's numeric cap; a 3-question set
+  never surfaces the sibling contract's facts in any answer
+- `tests/ai/prompts.test.ts` — `repairHebrewArabicHomoglyphs` normalizes the exact observed Hebrew
+  resh / Arabic reh substitution, leaves ordinary Arabic and English text untouched; `extractJson`
+  applies it before parsing so the parsed value comes out clean
+- `tests/ai/prompts.test.ts` — `summaryPrompt` and `chatPrompt` both instruct preserving
+  document-defined references like "Exhibit A" instead of mistranslating them as ordinary nouns
 
 Not regression-tested (impractical without live-model calls each run): the live model-quality
 findings themselves (false-positive rate, extraction accuracy, Arabic fluency). These are the

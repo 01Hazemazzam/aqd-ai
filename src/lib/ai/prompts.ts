@@ -17,6 +17,7 @@ const HARD_RULES = `Hard rules:
 - Reference clauses only by the "id" field given to you. Never invent a clause id.
 - A finding about a clause the document is missing entirely (e.g. no termination clause) uses "clauseId": null.
 - Write free-text values in the same language as the clause text they describe. If the document (or the relevant clause) is in Arabic, write in Arabic throughout, including any clause references -- do not leave structural words like "clause" in English inside an otherwise-Arabic sentence.
+- When referring to a specific named part of the document itself (e.g. "Exhibit A", "Schedule 1", "Appendix B"), keep that reference as written in the source rather than translating the generic word -- e.g. write "الملحق A" or keep "Exhibit A" as-is. Never translate "Exhibit" as "معرض" (which means "exhibition/gallery", a different word entirely) -- it is a document reference, not the everyday noun.
 - Output must be a single JSON object and nothing else -- no markdown fences, no commentary before or after.`
 
 // Plain rendering for tasks whose JSON output has no clause-id field at all
@@ -94,6 +95,7 @@ Hard rules:
 - Cite every factual claim with [n], where n is the bracketed number of the clause it came from. A claim with no supporting clause below must not be made at all.
 - If the clauses below do not contain the answer, respond with exactly this and nothing else: ${NOT_FOUND_TOKEN}
 - Write your answer in the same language as the question -- always, even when the clause you are citing is written in a different language than the question. Translate the fact into the question's language; do not switch to the clause's language just because that is the language you are quoting from. (Example: an English question grounded in an Arabic clause still gets an English answer.)
+- When referring to a specific named part of the document itself (e.g. "Exhibit A", "Schedule 1"), keep that reference as written in the source rather than translating the generic word -- e.g. write "الملحق A" or keep "Exhibit A" as-is, never "معرض" ("exhibition/gallery").
 - Do not fabricate a clause reference. Only use [n] values that appear in the numbered list below.
 - Plain text only -- no JSON, no markdown formatting.
 
@@ -152,6 +154,22 @@ export class MalformedAiResponseError extends Error {
   }
 }
 
+// A real Gemini Arabic summary once contained a single Hebrew character
+// (U+05E8, "resh") standing in for its visually near-identical Arabic
+// counterpart ("ر", reh, U+0631) in the middle of an otherwise-correct word
+// ("للמרخص" instead of "للمرخص") -- a generation-time script mix-up, not a
+// translation or grounding error. Narrow, evidence-based fix: normalize the
+// one confirmed homoglyph back to Arabic, rather than a broad Hebrew-range
+// strip that could damage legitimate text this app has no reason to expect
+// in the first place (this app has no Hebrew content anywhere).
+const HEBREW_ARABIC_HOMOGLYPHS: Record<string, string> = {
+  'ר': 'ر', // Hebrew resh -> Arabic reh
+}
+
+export function repairHebrewArabicHomoglyphs(text: string): string {
+  return text.replace(/[֐-׿]/g, (ch) => HEBREW_ARABIC_HOMOGLYPHS[ch] ?? ch)
+}
+
 // A real Gemini risk-findings response (Arabic reasonAr text, long output)
 // failed with "Bad Unicode escape in JSON" -- a stray backslash not part of
 // a valid JSON escape, most often produced inside non-Latin text. Retrying
@@ -164,7 +182,7 @@ function repairStrayBackslashes(text: string): string {
 
 export function extractJson<T>(task: string, text: string): T {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const candidate = (fenced ? fenced[1] : text).trim()
+  const candidate = repairHebrewArabicHomoglyphs((fenced ? fenced[1] : text).trim())
   try {
     return JSON.parse(candidate) as T
   } catch (err) {
