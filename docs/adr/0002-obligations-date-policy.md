@@ -1,0 +1,7 @@
+# The obligations register parses only unambiguous dates, and never invents one
+
+The analysis extractor is deliberately instructed not to compute or infer dates: an Obligation's `due` is "the stated deadline or trigger in the document's own words, or null" (see `obligationsPrompt`). So `buildObligationRegister` treats `due` as untrusted natural language. It places an Obligation on the dated timeline only when `due` is a fully-anchored, unambiguous calendar date (ISO `2027-06-30`, "June 30, 2027", "15 March 2027"); everything else — triggers ("within 30 days of termination"), recurrences ("annually"), null, and crucially ambiguous numeric slash-dates like `03/04/2027` — stays in the conditional list.
+
+## Consequences
+
+Leaving `03/04/2027` unparsed looks like a gap, but it is the point: its day/month order is genuinely ambiguous across locales, and guessing would put a wrong deadline on a legal timeline, which is worse than putting none. The same reasoning bars any "smarter" date parser that resolves relative phrases into concrete dates — that would fabricate a deadline the contract never stated. Do not extend the parser to accept slash-dates or relative phrases. If concrete dates are genuinely needed from trigger-based dues, the correct place is the extraction prompt (emitting a normalized date the document actually implies), re-run per contract — not a heuristic in this pure function, whose contract is "concrete and unambiguous, or conditional." The parser is unit-tested against exactly these boundaries (`tests/obligations/register.test.ts`).
