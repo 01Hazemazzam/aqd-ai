@@ -171,12 +171,26 @@
     "switchLanguage": "تغيير اللغة",
     "nav": {
       "contracts": "العقود",
+      "obligations": "الالتزامات",
       "help": "المساعدة",
       "team": "الفريق",
       "security": "الأمان",
       "signOut": "تسجيل الخروج",
       "openMenu": "فتح القائمة",
       "closeMenu": "إغلاق القائمة"
+    }
+  },
+  "obligations": {
+    "title": "الالتزامات",
+    "subtitle": "المواعيد النهائية والالتزامات عبر جميع عقودك.",
+    "empty": "لا توجد التزامات بعد. حلّل عقدًا لعرض مواعيده هنا.",
+    "upcomingTitle": "المواعيد القادمة",
+    "conditionalTitle": "مشروطة ومتكررة",
+    "noDeadline": "لا يوجد موعد محدد",
+    "urgency": {
+      "overdue": "متأخر",
+      "soon": "قريبًا",
+      "upcoming": "قادم"
     }
   },
   "security": {

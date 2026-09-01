@@ -171,12 +171,26 @@
     "switchLanguage": "Switch language",
     "nav": {
       "contracts": "Contracts",
+      "obligations": "Obligations",
       "help": "Help",
       "team": "Team",
       "security": "Security",
       "signOut": "Sign out",
       "openMenu": "Open menu",
       "closeMenu": "Close menu"
+    }
+  },
+  "obligations": {
+    "title": "Obligations",
+    "subtitle": "Deadlines and commitments across all your contracts.",
+    "empty": "No obligations yet. Analyze a contract to surface its deadlines here.",
+    "upcomingTitle": "Upcoming deadlines",
+    "conditionalTitle": "Conditional & recurring",
+    "noDeadline": "No deadline stated",
+    "urgency": {
+      "overdue": "Overdue",
+      "soon": "Due soon",
+      "upcoming": "Upcoming"
     }
   },
   "security": {

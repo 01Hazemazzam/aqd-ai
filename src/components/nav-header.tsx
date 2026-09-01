@@ -2,12 +2,12 @@
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { FileText, HelpCircle, Users, ShieldCheck, Menu, X, LogOut } from 'lucide-react'
+import { FileText, CalendarClock, HelpCircle, Users, ShieldCheck, Menu, X, LogOut } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { SettingsToggles } from '@/components/settings-toggles'
 import { cn } from '@/components/ui/cn'
 
-const ICON = { contracts: FileText, help: HelpCircle, team: Users, security: ShieldCheck } as const
+const ICON = { contracts: FileText, obligations: CalendarClock, help: HelpCircle, team: Users, security: ShieldCheck } as const
 
 export interface NavLink {
   href: string
