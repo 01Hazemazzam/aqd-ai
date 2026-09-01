@@ -82,13 +82,24 @@
     "inviteInvalid": "هذه الدعوة غير صالحة أو انتهت صلاحيتها."
   },
   "dashboard": {
-    "welcome": "أهلاً بك.",
-    "subtitle": "مؤسستك جاهزة الآن.",
+    "kicker": "ذكاء العقود",
+    "headline": "كل بند تحت المجهر.",
+    "lede": "عقد يقرأ كل بند، يكشف المخاطر الحقيقية، ويستشهد بمصدرها — لا يخمّن أبدًا.",
     "viewContracts": "عرض العقود",
     "uploadContract": "رفع عقد",
     "stats": {
       "totalContracts": "العقود",
       "readyContracts": "تم تحليلها"
+    },
+    "instrument": {
+      "highRisk": "مخاطر عالية",
+      "emptyCaption": "ارفع أول عقد لك",
+      "allAnalyzed": "تم تحليل جميع العقود",
+      "pending": "{count, plural, one {عقد واحد بانتظار التحليل} two {عقدان بانتظار التحليل} few {# عقود بانتظار التحليل} many {# عقدًا بانتظار التحليل} other {# عقد بانتظار التحليل}}"
+    },
+    "rail": {
+      "lastAnalysis": "آخر تحليل",
+      "never": "—"
     }
   },
   "contracts": {

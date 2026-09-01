@@ -82,13 +82,24 @@
     "inviteInvalid": "This invitation is invalid or has expired."
   },
   "dashboard": {
-    "welcome": "You're in.",
-    "subtitle": "Your organization is set up and ready.",
+    "kicker": "Contract Intelligence",
+    "headline": "Every clause, under scrutiny.",
+    "lede": "Aqd reads every clause, flags real risk, and cites its source — never a guess.",
     "viewContracts": "View contracts",
     "uploadContract": "Upload a contract",
     "stats": {
       "totalContracts": "Contracts",
       "readyContracts": "Analyzed"
+    },
+    "instrument": {
+      "highRisk": "High risk",
+      "emptyCaption": "Upload to begin",
+      "allAnalyzed": "All contracts analyzed",
+      "pending": "{count, plural, one {# contract awaiting analysis} other {# contracts awaiting analysis}}"
+    },
+    "rail": {
+      "lastAnalysis": "Last analysis",
+      "never": "—"
     }
   },
   "contracts": {
