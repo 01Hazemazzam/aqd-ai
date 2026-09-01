@@ -1,10 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Sparkles, Send, MessageSquare } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
-import { Button } from '@/components/ui/button'
+import { Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { ChatWidget, type ChatMessage, type ChatTransport, type Delta } from '@/components/chat-widget'
 
 export interface Citation {
   ordinal: number
@@ -12,13 +10,11 @@ export interface Citation {
   clauseNumber: string | null
 }
 
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-  notFound?: boolean
-  citations?: Citation[]
-  errorKey?: string
-}
+// The surface-specific fields Contract chat adds on top of the widget's base
+// message. citations drives the clickable [n] rendering; notFound marks the
+// grounded-refusal answer.
+export type ContractChatExtra = { citations?: Citation[]; notFound?: boolean }
+export type ContractChatMessage = ChatMessage<ContractChatExtra>
 
 function scrollToAndFlashClause(clauseId: string) {
   const el = document.getElementById(`clause-${clauseId}`)
@@ -53,18 +49,56 @@ function renderWithCitations(content: string, citations: Citation[]) {
   })
 }
 
-function TypingIndicator() {
-  return (
-    <span className="inline-flex items-center gap-1 py-1" aria-hidden="true">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-faint"
-          style={{ animationDelay: `${i * 120}ms`, animationDuration: '900ms' }}
-        />
-      ))}
-    </span>
-  )
+// The Contract-chat transport adapter: turns the /api/chat SSE stream into the
+// widget's Delta shape. All SSE-parsing, the contractId, and the NOT_FOUND
+// text substitution live here, behind the send() seam -- the widget never
+// learns any of them. See docs/adr/0001-chat-transport-as-async-generator.md.
+async function* streamContractChat(
+  contractId: string,
+  notFoundText: string,
+  question: string,
+  signal: AbortSignal,
+): AsyncIterable<Delta<ContractChatExtra>> {
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contractId, question }),
+    signal,
+  })
+  if (!response.body) throw new Error('no response body')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() ?? ''
+    for (const frame of frames) {
+      const eventLine = frame.split('\n').find((l) => l.startsWith('event:'))
+      const dataLine = frame.split('\n').find((l) => l.startsWith('data:'))
+      if (!eventLine || !dataLine) continue
+      const event = eventLine.slice(6).trim()
+      const data = JSON.parse(dataLine.slice(5).trim())
+
+      if (event === 'token') {
+        yield { type: 'append', text: data.text }
+      } else if (event === 'done') {
+        yield {
+          type: 'finalize',
+          patch: data.notFound
+            ? { content: notFoundText, notFound: true, citations: [] }
+            : { notFound: false, citations: data.citations },
+        }
+      } else if (event === 'error') {
+        yield { type: 'error', errorKey: data.error }
+      }
+    }
+  }
 }
 
 // initialMessages is fetched server-side by the contract page and handed in
@@ -72,90 +106,17 @@ function TypingIndicator() {
 // always mounted with an empty list, so existing chat_messages/citations
 // were fully intact in the database but never loaded back into view (see
 // qa/FINDINGS.md, Sub-project 4's third QA pass).
-export function ChatPanel({ contractId, initialMessages = [] }: { contractId: string; initialMessages?: ChatMessage[] }) {
+export function ChatPanel({
+  contractId,
+  initialMessages = [],
+}: {
+  contractId: string
+  initialMessages?: ContractChatMessage[]
+}) {
   const t = useTranslations('contracts')
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
-  const [input, setInput] = useState('')
-  const [pending, setPending] = useState(false)
-  const listRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages])
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const question = input.trim()
-    if (!question || pending) return
-
-    setInput('')
-    setPending(true)
-    setMessages((prev) => [...prev, { role: 'user', content: question }, { role: 'assistant', content: '' }])
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ contractId, question }),
-      })
-      if (!response.body) throw new Error('no response body')
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const frames = buffer.split('\n\n')
-        buffer = frames.pop() ?? ''
-        for (const frame of frames) {
-          const eventLine = frame.split('\n').find((l) => l.startsWith('event:'))
-          const dataLine = frame.split('\n').find((l) => l.startsWith('data:'))
-          if (!eventLine || !dataLine) continue
-          const event = eventLine.slice(6).trim()
-          const data = JSON.parse(dataLine.slice(5).trim())
-
-          if (event === 'token') {
-            setMessages((prev) => {
-              const next = [...prev]
-              next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + data.text }
-              return next
-            })
-          } else if (event === 'done') {
-            setMessages((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              next[next.length - 1] = {
-                ...last,
-                content: data.notFound ? t('chat.notFound') : last.content,
-                notFound: data.notFound,
-                citations: data.citations,
-              }
-              return next
-            })
-          } else if (event === 'error') {
-            setMessages((prev) => {
-              const next = [...prev]
-              next[next.length - 1] = { ...next[next.length - 1], errorKey: data.error }
-              return next
-            })
-          }
-        }
-      }
-    } catch {
-      setMessages((prev) => {
-        const next = [...prev]
-        next[next.length - 1] = { ...next[next.length - 1], errorKey: 'unknown' }
-        return next
-      })
-    } finally {
-      setPending(false)
-    }
-  }
+  const send: ChatTransport<ContractChatExtra> = (question, { signal }) =>
+    streamContractChat(contractId, t('chat.notFound'), question, signal)
 
   return (
     <Card>
@@ -163,59 +124,15 @@ export function ChatPanel({ contractId, initialMessages = [] }: { contractId: st
         <Sparkles size={15} aria-hidden="true" className="text-accent" />
         {t('chat.title')}
       </h2>
-
-      <div ref={listRef} className="mb-4 flex max-h-96 flex-col gap-3 overflow-y-auto scroll-smooth">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <MessageSquare size={20} aria-hidden="true" className="text-ink-faint" />
-            <p className="max-w-xs text-sm text-ink-faint">{t('chat.empty')}</p>
-          </div>
-        )}
-        <AnimatePresence initial={false}>
-          {messages.map((m, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              dir="auto"
-              className={m.role === 'user' ? 'ms-auto max-w-[85%]' : 'max-w-[85%]'}
-            >
-              <div
-                className={
-                  m.role === 'user'
-                    ? 'rounded-lg bg-accent/10 px-3 py-2 text-sm text-ink'
-                    : 'rounded-lg bg-surface-3 px-3 py-2 text-sm text-ink-dim'
-                }
-              >
-                {m.errorKey ? (
-                  <span role="alert" className="text-risk-high">{t(`chat.errors.${m.errorKey}` as 'chat.errors.unknown')}</span>
-                ) : m.citations ? (
-                  renderWithCitations(m.content, m.citations)
-                ) : m.content ? (
-                  m.content
-                ) : pending && i === messages.length - 1 ? (
-                  <TypingIndicator />
-                ) : null}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={t('chat.placeholder')}
-          disabled={pending}
-          className="flex-1 rounded-lg border border-edge bg-surface p-2 text-sm text-ink placeholder:text-ink-faint transition-colors focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
-        />
-        <Button type="submit" loading={pending} disabled={!input.trim()} icon={<Send size={14} aria-hidden="true" />}>
-          {t('chat.send')}
-        </Button>
-      </form>
+      <ChatWidget<ContractChatExtra>
+        send={send}
+        renderContent={(m) => (m.citations ? renderWithCitations(m.content, m.citations) : m.content)}
+        initialMessages={initialMessages}
+        emptyText={t('chat.empty')}
+        placeholder={t('chat.placeholder')}
+        sendLabel={t('chat.send')}
+        errorText={(key) => t(`chat.errors.${key}` as 'chat.errors.unknown')}
+      />
     </Card>
   )
 }
