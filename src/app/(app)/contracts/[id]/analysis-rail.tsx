@@ -44,16 +44,26 @@ export interface RailClause {
   body: string
 }
 
+export type FindingKind = 'playbook' | 'asymmetry' | 'contradiction' | 'dependency'
+
+export interface RailEvidence {
+  clauseId: string
+  /** Verbatim words from that clause, verified at analysis time. */
+  quote: string
+}
+
 export interface RailFinding {
   id: string
+  /** The clause the finding is anchored to (the first quoted one). */
   clauseId: string | null
+  kind: FindingKind
   severity: Severity
   title: string
   reason: string
-  /** The verbatim words this finding was based on, verified against the
-      clause at analysis time. Null for missing-clause findings, and for
-      findings produced before evidence was captured. */
-  evidence: string | null
+  /** One entry per clause quoted -- two or more for a finding about how
+      clauses relate. Empty for a missing-clause finding, and for findings
+      produced before evidence was captured. */
+  evidence: RailEvidence[]
 }
 
 type Tab = 'risks' | 'summary' | 'obligations' | 'chat'
@@ -143,6 +153,16 @@ export function AnalysisRail({
               {findings.map((f) => {
                 const clause = f.clauseId ? clauseById.get(f.clauseId) : undefined
                 const isOpen = expanded.has(f.id)
+                // Only spans pointing at a clause still in the document can
+                // be shown or jumped to.
+                const spans = f.evidence.filter((e) => clauseById.has(e.clauseId))
+                // A cross-clause finding names every clause it spans, so the
+                // collapsed row already tells the reader it is about a
+                // relationship rather than a single clause.
+                const clauseLabels = [...new Set(spans.map((s) => s.clauseId))]
+                  .map((id) => clauseById.get(id))
+                  .filter((c) => c !== undefined)
+                  .map((c) => t('clauseHeading', { number: c.clauseNumber ?? String(c.ordinal) }))
                 return (
                   <li key={f.id} className="overflow-hidden rounded-lg border border-edge bg-surface">
                     <button
@@ -157,11 +177,20 @@ export function AnalysisRail({
                           <RiskPill level={f.severity} />
                         </div>
                         <p dir="auto" className="mt-1 text-xs leading-relaxed text-ink-dim">{f.reason}</p>
-                        <p className="mt-1.5 text-[11px] text-ink-faint">
-                          {clause
-                            ? t('clauseHeading', { number: clause.clauseNumber ?? String(clause.ordinal) })
-                            : t('reader.clauseNotPresent')}
-                        </p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-faint">
+                          {f.kind !== 'playbook' && (
+                            <span className="rounded-full border border-edge px-1.5 py-px font-medium text-ink-dim">
+                              {t(`reader.kinds.${f.kind}` as 'reader.kinds.asymmetry')}
+                            </span>
+                          )}
+                          <span>
+                            {clauseLabels.length > 0
+                              ? clauseLabels.join(' · ')
+                              : clause
+                                ? t('clauseHeading', { number: clause.clauseNumber ?? String(clause.ordinal) })
+                                : t('reader.clauseNotPresent')}
+                          </span>
+                        </div>
                       </div>
                       <ChevronDown
                         size={15}
@@ -172,23 +201,59 @@ export function AnalysisRail({
 
                     {isOpen && (
                       <div className="border-t border-edge bg-surface-2 p-3">
-                        {clause ? (
+                        {spans.length > 0 ? (
                           <>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+                              {t('reader.evidence')}
+                            </p>
+                            {/* One quote per clause the finding rests on. A
+                                cross-clause finding has two or more, and
+                                showing them stacked IS the argument: the
+                                reader sees both sides of the asymmetry or
+                                contradiction without leaving the rail. */}
+                            <ul className="flex flex-col gap-3">
+                              {spans.map((span, i) => {
+                                const quoted = clauseById.get(span.clauseId)
+                                return (
+                                  <li key={`${span.clauseId}-${i}`}>
+                                    {quoted && (
+                                      <p className="mb-1 text-[11px] text-ink-faint">
+                                        {t('clauseHeading', {
+                                          number: quoted.clauseNumber ?? String(quoted.ordinal),
+                                        })}
+                                      </p>
+                                    )}
+                                    <p
+                                      dir={quoted?.lang === 'ar' ? 'rtl' : 'ltr'}
+                                      className="border-s-2 border-brass ps-2.5 text-xs italic leading-relaxed text-ink-dim"
+                                    >
+                                      {span.quote}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => focusClause(span.clauseId)}
+                                      className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline"
+                                    >
+                                      <CornerDownRight size={13} aria-hidden="true" className="rtl:-scale-x-100" />
+                                      {t('reader.jumpToClause')}
+                                    </button>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </>
+                        ) : clause ? (
+                          <>
+                            {/* No spans but an anchored clause: a finding
+                                analysed before evidence was captured. The
+                                whole clause is the honest fallback -- it is
+                                where the finding came from, just not narrowed
+                                to the words. */}
                             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                               {t('reader.evidence')}
                             </p>
-                            {/* The model's own verified quote when there is
-                                one -- the exact words the finding rests on --
-                                falling back to the whole clause for findings
-                                analysed before evidence was captured. */}
-                            <p
-                              dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
-                              className={cn(
-                                'text-xs leading-relaxed text-ink-dim',
-                                f.evidence && 'border-s-2 border-brass ps-2.5 italic',
-                              )}
-                            >
-                              {f.evidence ?? clause.body}
+                            <p dir={clause.lang === 'ar' ? 'rtl' : 'ltr'} className="text-xs leading-relaxed text-ink-dim">
+                              {clause.body}
                             </p>
                             <button
                               type="button"

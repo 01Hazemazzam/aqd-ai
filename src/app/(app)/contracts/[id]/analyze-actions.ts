@@ -10,11 +10,14 @@ import {
   summaryPrompt,
   fieldsPrompt,
   risksPrompt,
+  crossClausePrompt,
   obligationsPrompt,
   extractJson,
   type PromptClause,
   type PlaybookRule,
 } from '@/lib/ai/prompts'
+import type { RawFinding } from '@/lib/ai/verify-findings'
+import { dropRedundantRelational } from '@/lib/ai/dedupe-findings'
 
 type SummaryOutput = { summary: string }
 type FieldsOutput = {
@@ -24,16 +27,11 @@ type FieldsOutput = {
   governingLaw: string | null
   totalValue: string | null
 }
-type RiskFinding = {
-  clauseId: string | null
-  ruleKey: string | null
-  severity: 'high' | 'medium' | 'low'
-  title: string
-  reason: string
-  reasonAr: string
-  evidence: string | null
-}
-type RisksOutput = { findings: RiskFinding[] }
+// Both risk passes emit the same finding shape and are verified by the same
+// code, so they share one type -- deliberately the verifier's own RawFinding
+// (untrusted, every field optional-ish) rather than a tidier local type that
+// would imply the model's output can be relied on.
+type RisksOutput = { findings: RawFinding[] }
 type Obligation = { clauseId: string | null; obligor: string; action: string; due: string | null }
 type ObligationsOutput = { obligations: Obligation[] }
 
@@ -167,51 +165,104 @@ export async function analyzeContract(contractId: string) {
     })
   }
 
-  const [summaryRun, fieldsRun, risksRun, obligationsRun] = await Promise.all([
+  // Five tasks, still one round trip's worth of wall time. The cross-clause
+  // pass is a separate call rather than more instructions bolted onto the
+  // risks prompt because the two ask for opposite reading habits: the
+  // playbook pass checks each clause against a fixed list, the cross-clause
+  // pass ignores the list and reads for relationships. Merged into one
+  // prompt the checklist dominates and the relational findings stop
+  // appearing.
+  const [summaryRun, fieldsRun, risksRun, crossRun, obligationsRun] = await Promise.all([
     runTask<SummaryOutput>('summary', 'main', summaryPrompt(clauses), logUsage),
     runTask<FieldsOutput>('fields', 'main', fieldsPrompt(clauses), logUsage),
     runTask<RisksOutput>('risks', 'main', risksPrompt(clauses, rules), logUsage),
+    runTask<RisksOutput>('cross_clause', 'main', crossClausePrompt(clauses), logUsage),
     runTask<ObligationsOutput>('obligations', 'main', obligationsPrompt(clauses), logUsage),
   ])
 
-  if (!summaryRun.ok && !fieldsRun.ok && !risksRun.ok && !obligationsRun.ok) {
-    const errorCode = classifyAnalysisError([summaryRun, fieldsRun, risksRun, obligationsRun])
+  if (!summaryRun.ok && !fieldsRun.ok && !risksRun.ok && !crossRun.ok && !obligationsRun.ok) {
+    const errorCode = classifyAnalysisError([summaryRun, fieldsRun, risksRun, crossRun, obligationsRun])
     await supabase.from('analyses').update({ status: 'failed', error: errorCode }).eq('id', analysisId)
     return { error: errorCode }
   }
 
+  // finding_evidence cascades from risk_findings, so this clears both.
   await supabase.from('risk_findings').delete().eq('analysis_id', analysisId)
-  if (risksRun.ok && risksRun.data) {
+
+  // Both passes' findings go through the same verifier and the same table --
+  // the reader sees one list of risks, not "playbook risks" and "structural
+  // risks" as separate features. `kind` is what distinguishes them.
+  const proposed: RawFinding[] = [
+    ...(risksRun.ok ? (risksRun.data?.findings ?? []).map((f) => ({ ...f, kind: 'playbook' })) : []),
+    ...(crossRun.ok ? (crossRun.data?.findings ?? []) : []),
+  ]
+
+  if (proposed.length) {
     // Grounding is enforced here, not trusted from the prompt: a finding
-    // survives only if it cites a real clause AND quotes words genuinely in
-    // it. Asking the model for evidence makes a fabricated finding *possible*
-    // to catch; this check is what actually catches it.
-    const { kept, rejected } = verifyFindings(risksRun.data.findings, clauseRows.map((c) => ({ id: c.id, body: c.body })))
+    // survives only if every clause it cites is real AND every quote it gives
+    // is genuinely in that clause. Asking the model for evidence makes a
+    // fabricated finding *possible* to catch; this check is what actually
+    // catches it.
+    const verified = verifyFindings(proposed, clauseRows.map((c) => ({ id: c.id, body: c.body })))
+    const rejected = verified.rejected
+
+    // Grounded is not the same as worth showing. On a badly one-sided
+    // contract both passes converge on the same clauses, and the reader ends
+    // up with two rows per risk; this drops the relational findings that add
+    // no clause the playbook pass had not already reported.
+    const { kept, dropped } = dropRedundantRelational(verified.kept)
+    if (dropped.length) {
+      console.info(
+        `[analyzeContract] dropped ${dropped.length} cross-clause finding(s) already covered by the playbook pass:`,
+        dropped.map((d) => d.title).join(' | '),
+      )
+    }
 
     // Logged, never silent: a run that drops most of its findings is the
     // signal that a prompt or model change has regressed, and without this
     // the only symptom is findings quietly going missing.
     if (rejected.length) {
       console.warn(
-        `[analyzeContract] dropped ${rejected.length}/${risksRun.data.findings.length} ungrounded finding(s):`,
+        `[analyzeContract] dropped ${rejected.length}/${proposed.length} ungrounded finding(s):`,
         rejected.map((r) => `${r.reason}: ${r.finding.title}`).join(' | '),
       )
     }
 
     if (kept.length) {
-      await supabase.from('risk_findings').insert(
-        kept.map((f) => ({
+      // Ids are generated here rather than read back from the insert, so
+      // linking a finding to its quotes never depends on the order rows come
+      // back in. A mismatch there would silently attach one finding's
+      // evidence to another -- the exact failure this whole module exists to
+      // prevent, arriving through the back door.
+      const rows = kept.map((f) => ({ id: crypto.randomUUID(), finding: f }))
+
+      const { error: insertError } = await supabase.from('risk_findings').insert(
+        rows.map(({ id, finding }) => ({
+          id,
           analysis_id: analysisId,
           org_id: orgId,
-          clause_id: f.clauseId,
-          rule_key: f.ruleKey,
-          severity: f.severity,
-          title: f.title,
-          reason: f.reason,
-          reason_ar: f.reasonAr,
-          evidence: f.evidence,
+          clause_id: finding.clauseId,
+          rule_key: finding.ruleKey,
+          kind: finding.kind,
+          severity: finding.severity,
+          title: finding.title,
+          reason: finding.reason,
+          reason_ar: finding.reasonAr,
         })),
       )
+
+      if (!insertError) {
+        const spans = rows.flatMap(({ id, finding }) =>
+          finding.evidence.map((span, ordinal) => ({
+            finding_id: id,
+            org_id: orgId,
+            clause_id: span.clauseId,
+            quote: span.quote,
+            ordinal,
+          })),
+        )
+        if (spans.length) await supabase.from('finding_evidence').insert(spans)
+      }
     }
   }
 
@@ -221,7 +272,7 @@ export async function analyzeContract(contractId: string) {
   // Status stays 'ready' (the tasks that DID succeed are real and worth
   // showing), but 'partial' on an otherwise-ready analysis is a visible,
   // non-blocking notice rather than a silently incomplete result.
-  const allSucceeded = summaryRun.ok && fieldsRun.ok && risksRun.ok && obligationsRun.ok
+  const allSucceeded = summaryRun.ok && fieldsRun.ok && risksRun.ok && crossRun.ok && obligationsRun.ok
   await supabase
     .from('analyses')
     .update({

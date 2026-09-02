@@ -149,6 +149,11 @@
         "chat": "Ask about this contract"
       },
       "evidence": "Evidence",
+      "kinds": {
+        "asymmetry": "One-sided",
+        "contradiction": "Conflicting clauses",
+        "dependency": "Undercut elsewhere"
+      },
       "jumpToClause": "Jump to this clause",
       "clauseNotPresent": "Clause not present",
       "clauseNotPresentHint": "This finding is about a clause the document never includes, so there is nothing to quote.",

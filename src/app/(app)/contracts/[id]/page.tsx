@@ -36,12 +36,30 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
       ? supabase.from('clauses').select('id, ordinal, clause_number, lang, body').eq('version_id', version.id).order('ordinal', { ascending: true })
       : Promise.resolve({ data: null }),
     analysis
-      ? supabase.from('risk_findings').select('id, clause_id, severity, title, reason, evidence').eq('analysis_id', analysis.id)
+      ? supabase.from('risk_findings').select('id, clause_id, kind, severity, title, reason').eq('analysis_id', analysis.id)
       : Promise.resolve({ data: null }),
     chat
       ? supabase.from('chat_messages').select('id, role, content, not_found').eq('chat_id', chat.id).order('created_at', { ascending: true })
       : Promise.resolve({ data: null }),
   ])
+
+  // Evidence spans are a separate read because a finding can quote several
+  // clauses -- a cross-clause finding cites one on each side of the
+  // relationship it reports.
+  const findingIds = (findings ?? []).map((f) => f.id as string)
+  const { data: evidenceRows } = findingIds.length
+    ? await supabase
+        .from('finding_evidence')
+        .select('finding_id, clause_id, quote, ordinal')
+        .in('finding_id', findingIds)
+        .order('ordinal', { ascending: true })
+    : { data: null }
+  const evidenceByFinding = new Map<string, Array<{ clauseId: string; quote: string }>>()
+  for (const row of evidenceRows ?? []) {
+    const list = evidenceByFinding.get(row.finding_id as string) ?? []
+    list.push({ clauseId: row.clause_id as string, quote: row.quote as string })
+    evidenceByFinding.set(row.finding_id as string, list)
+  }
 
   const messageIds = (chatMessages ?? []).map((m) => m.id)
   const { data: citationRows } = messageIds.length
@@ -166,10 +184,11 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
             findings={(findings ?? []).map((f) => ({
               id: f.id as string,
               clauseId: (f.clause_id as string | null) ?? null,
+              kind: (f.kind as 'playbook' | 'asymmetry' | 'contradiction' | 'dependency') ?? 'playbook',
               severity: f.severity as 'high' | 'medium' | 'low',
               title: f.title as string,
               reason: f.reason as string,
-              evidence: (f.evidence as string | null) ?? null,
+              evidence: evidenceByFinding.get(f.id as string) ?? [],
             }))}
             summary={(analysis?.summary as string | null) ?? null}
             fields={fields}

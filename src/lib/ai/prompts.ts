@@ -53,16 +53,60 @@ export function fieldsPrompt(clauses: PromptClause[]) {
   }
 }
 
+// Shared by both risk passes: how to quote, and how to grade. Kept in one
+// place because the two passes produce findings of the same shape and are
+// verified by the same code -- a rule that drifts between them shows up as
+// one pass's findings being silently discarded.
+const EVIDENCE_RULES = `Every finding must quote the words it rests on. "evidence" is a list; each entry names a clause by its id and gives a short excerpt (roughly 5-30 words) copied EXACTLY, character for character, from that clause's body -- the specific words that make this a risk. Copy, do not paraphrase, do not tidy up the wording, and do not translate it: quote each clause in the language it is written in. Use "..." to skip over the middle of a long passage. If you cannot point to actual words that show the problem, do not report the finding at all. A finding whose quote is not genuinely present in the clause it is attributed to is discarded before it ever reaches the user, so an unquotable finding is worse than no finding.`
+
+const SEVERITY_RULES = `Severity: "high" for something that could cause uncapped financial loss, let the other party exit or change the deal unilaterally, or leave a critical protection entirely absent; "medium" for a one-sided or unclear term that is still bounded; "low" for a gap worth noting that carries little immediate exposure. Judge the actual wording in front of you, not any typical severity -- a typical severity is a starting point, not the answer.`
+
 export function risksPrompt(clauses: PromptClause[], rules: PlaybookRule[]) {
   const ruleList = rules
     .map((r) => `- ${r.ruleKey}: ${r.title} -- ${r.description} (typical severity: ${r.severityHint})`)
     .join('\n')
   return {
-    system: `You are a contract risk reviewer. Score the contract against this playbook of rules:\n${ruleList}\n\n${HARD_RULES}\n\nFor each rule, only report a finding if the contract actually violates it or is missing something the rule requires -- do not report a finding for a rule the contract already satisfies.\n\nSome rules describe a problem with a clause type only when that clause type is present and badly worded (for example: an auto-renewal clause with no opt-out notice period, an indemnification clause that only protects one party, liability language that is unlimited or one-sided, amendment rights held by only one party). The clause type simply being absent from the contract is NOT a violation of these rules and must not be reported -- a contract with no auto-renewal clause, no indemnification clause, or no amendment clause at all has nothing for that rule to flag. Only report a missing-clause finding when the rule's own description explicitly requires the clause type's presence (for example, wording like "should include" or "should state"). Every finding anchored to a clause must quote its own evidence. "evidence" is a short excerpt (roughly 5-30 words) copied EXACTLY, character for character, from the body of the clause named in "clauseId" -- the specific words that make this a risk. Copy, do not paraphrase, do not tidy up the wording, and do not translate it: quote the clause in the language it is written in. Use "..." to skip over the middle of a long passage. If you cannot point to actual words in that clause that show the problem, do not report the finding at all. A finding whose evidence is not genuinely present in the cited clause is discarded before it ever reaches the user, so an unquotable finding is worse than no finding.
+    system: `You are a contract risk reviewer. Score the contract against this playbook of rules:\n${ruleList}\n\n${HARD_RULES}\n\nFor each rule, only report a finding if the contract actually violates it or is missing something the rule requires -- do not report a finding for a rule the contract already satisfies.\n\nSome rules describe a problem with a clause type only when that clause type is present and badly worded (for example: an auto-renewal clause with no opt-out notice period, an indemnification clause that only protects one party, liability language that is unlimited or one-sided, amendment rights held by only one party). The clause type simply being absent from the contract is NOT a violation of these rules and must not be reported -- a contract with no auto-renewal clause, no indemnification clause, or no amendment clause at all has nothing for that rule to flag. Only report a missing-clause finding when the rule's own description explicitly requires the clause type's presence (for example, wording like "should include" or "should state"). ${EVIDENCE_RULES}
 
-Severity: "high" for something that could cause uncapped financial loss, let the other party exit or change the deal unilaterally, or leave a critical protection entirely absent; "medium" for a one-sided or unclear term that is still bounded; "low" for a gap worth noting that carries little immediate exposure. Judge the actual wording in front of you, not the rule's typical severity -- the typical severity is a starting point, not the answer.
+${SEVERITY_RULES}
 
-Respond with JSON: {"findings": [{"clauseId": string | null, "ruleKey": string, "severity": "high" | "medium" | "low", "title": string, "reason": string, "reasonAr": string, "evidence": string | null}]}. "reasonAr" is the same reason written in Arabic. "evidence" is null only when "clauseId" is null, since a clause the document does not contain has nothing to quote. An empty findings array is a valid answer.`,
+Respond with JSON: {"findings": [{"ruleKey": string, "severity": "high" | "medium" | "low", "title": string, "reason": string, "reasonAr": string, "evidence": [{"clauseId": string, "quote": string}]}]}. "reasonAr" is the same reason written in Arabic. "evidence" is an empty list only for a finding about a clause the document does not contain, since there is nothing to quote. An empty findings array is a valid answer.`,
+    user: renderClausesWithIds(clauses),
+  }
+}
+
+// The second risk pass, and the one a playbook checklist structurally cannot
+// do. Every playbook rule asks a question about ONE clause ("is liability
+// capped?", "is there a governing law?"), so a well-drafted contract passes
+// all of them and the analysis reports nothing -- even when its clauses,
+// read together, hand one party a right the other does not have, or say two
+// incompatible things about the same subject. Those risks live in the
+// relationships BETWEEN clauses, so this pass is given the whole document at
+// once and asked only about relationships.
+//
+// The failure mode to guard against here is the opposite of the playbook
+// pass's: with an open-ended "find asymmetries" brief a model will
+// manufacture them, reporting a difference between clauses that the contract
+// itself resolves ("the renewal right is mutual"). Hence the insistence that
+// a relational finding quote BOTH sides -- a fabricated asymmetry usually
+// cannot produce a second quote, and the verifier drops it when it does not.
+export function crossClausePrompt(clauses: PromptClause[]) {
+  return {
+    system: `You are a senior contract lawyer reading a contract as a whole. You are NOT checking a compliance checklist -- another reviewer already does that, and duplicating it is wasted work. Your job is the risks that only appear when two or more clauses are read together:
+
+- "asymmetry": one party has a right, remedy, notice period, cure period, liability exposure or termination option that the other party does not, or has on materially worse terms.
+- "contradiction": two clauses state incompatible things about the same subject -- different deadlines, notice periods, amounts, governing texts, or one clause granting what another withholds.
+- "dependency": one clause's protection is undercut, conditioned on, or made unusable by another clause elsewhere in the document (for example a cap that an exclusion elsewhere swallows, or a right whose exercise a different clause blocks).
+
+${HARD_RULES}
+
+Report a finding only when the contract text actually shows it. Contracts routinely and legitimately treat the parties differently, and a difference is not automatically a risk -- an asymmetry is worth reporting when it leaves one party materially exposed or without recourse. If a clause explicitly resolves the point (for example by stating that a right is mutual, or that one document controls over another), there is no finding: the contract has already answered it, and reporting it anyway is a false positive that costs the reader more than the finding is worth. Do not report a risk that lives entirely inside one clause -- that is the other reviewer's job.
+
+${EVIDENCE_RULES} Quote EVERY clause the finding involves, and quote the words that actually make the two sides differ -- not the clause's opening line. A "contradiction" or a "dependency" is a statement about two places in the document and must quote at least two different clauses; a finding of either kind quoting only one clause is discarded, because a single quote cannot show it. An "asymmetry" usually also needs two clauses (the one granting the right, and the one that gives the other party nothing comparable), but when a single clause states both sides itself -- for example by saying outright that the other party has no equivalent right -- quoting that one clause is enough and is the strongest evidence available.
+
+${SEVERITY_RULES}
+
+Respond with JSON: {"findings": [{"kind": "asymmetry" | "contradiction" | "dependency", "severity": "high" | "medium" | "low", "title": string, "reason": string, "reasonAr": string, "evidence": [{"clauseId": string, "quote": string}]}]}. "reason" must say what each quoted clause contributes and why the combination is a risk. "reasonAr" is the same reason written in Arabic. An empty findings array is a valid answer, and is the right answer for a contract whose clauses are consistent and even-handed.`,
     user: renderClausesWithIds(clauses),
   }
 }

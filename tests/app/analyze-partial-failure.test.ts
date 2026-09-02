@@ -4,7 +4,7 @@
 // previously saved as a plain 'ready' analysis with zero visible signal that
 // anything went wrong -- the failed task's section just silently didn't
 // appear. This proves the persisted row now carries error: 'partial' when
-// exactly one of the four tasks fails, and error: null when all four
+// exactly one of the five tasks fails, and error: null when all five
 // succeed, using the actual production analyzeContract function against a
 // mocked Supabase client shaped like the real schema.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -18,6 +18,7 @@ vi.mock('@/lib/ai/prompts', async () => {
     summaryPrompt: () => ({ system: 'TASK:summary', user: '' }),
     fieldsPrompt: () => ({ system: 'TASK:fields', user: '' }),
     risksPrompt: () => ({ system: 'TASK:risks', user: '' }),
+    crossClausePrompt: () => ({ system: 'TASK:cross', user: '' }),
     obligationsPrompt: () => ({ system: 'TASK:obligations', user: '' }),
   }
 })
@@ -91,11 +92,12 @@ function jsonResult(payload: unknown) {
 }
 
 describe('analyzeContract partial-failure surfacing', () => {
-  it('persists error: "partial" when exactly one of four tasks fails', async () => {
+  it('persists error: "partial" when exactly one of five tasks fails', async () => {
     aiComplete.mockImplementation(async (_tier: string, system: string) => {
       if (system === 'TASK:fields') throw new Error('malformed response')
       if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
       if (system === 'TASK:risks') return jsonResult({ findings: [] })
+      if (system === 'TASK:cross') return jsonResult({ findings: [] })
       if (system === 'TASK:obligations') return jsonResult({ obligations: [] })
       throw new Error('unexpected task')
     })
@@ -110,11 +112,12 @@ describe('analyzeContract partial-failure surfacing', () => {
     expect(finalUpdate?.[0].fields).toBeNull()
   })
 
-  it('persists error: null when all four tasks succeed', async () => {
+  it('persists error: null when all five tasks succeed', async () => {
     aiComplete.mockImplementation(async (_tier: string, system: string) => {
       if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
       if (system === 'TASK:fields') return jsonResult({ parties: null, effectiveDate: null, termLength: null, governingLaw: null, totalValue: null })
       if (system === 'TASK:risks') return jsonResult({ findings: [] })
+      if (system === 'TASK:cross') return jsonResult({ findings: [] })
       if (system === 'TASK:obligations') return jsonResult({ obligations: [] })
       throw new Error('unexpected task')
     })
@@ -139,6 +142,7 @@ describe('analyzeContract partial-failure surfacing', () => {
       if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
       if (system === 'TASK:fields') return jsonResult({ parties: null, effectiveDate: null, termLength: null, governingLaw: null, totalValue: null })
       if (system === 'TASK:risks') return jsonResult({ findings: [] })
+      if (system === 'TASK:cross') return jsonResult({ findings: [] })
       if (system === 'TASK:obligations') return jsonResult({ obligations: [] })
       throw new Error('unexpected task')
     })
@@ -147,7 +151,7 @@ describe('analyzeContract partial-failure surfacing', () => {
     const result = await analyzeContract('contract-1')
 
     expect(result).toEqual({ analysisId: 'analysis-1', cached: false })
-    expect(aiComplete).toHaveBeenCalledTimes(4)
+    expect(aiComplete).toHaveBeenCalledTimes(5)
     const finalUpdate = analysesUpdate.mock.calls.find((c) => c[0].status === 'ready')
     expect(finalUpdate?.[0].error).toBeNull()
   })
