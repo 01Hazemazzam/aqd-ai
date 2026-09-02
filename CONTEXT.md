@@ -36,6 +36,20 @@ _Avoid_: task, todo, deadline (a deadline is only one shape of a `due`).
 **Obligations register**:
 The cross-contract consolidation of every Obligation from each Contract's latest Analysis, split into a **dated** timeline (Obligations whose `due` parses to a concrete calendar date, sorted and bucketed by urgency) and a **conditional** list (trigger-based, recurring, or undated Obligations, plus dates too ambiguous to place). Built by `buildObligationRegister`; see [ADR-0002](docs/adr/0002-obligations-date-policy.md).
 
+**Due specification**:
+The structured reading of an Obligation's `due`: an Anchor, an offset and unit, and a direction (before/after/on), alongside the phrase exactly as the document writes it. Produced by the extractor and verified against the source Clause in code, never parsed out of the `due` string afterwards. See [ADR-0003](docs/adr/0003-deadline-resolution-from-stated-facts.md).
+_Avoid_: date hint, parsed due.
+
+**Anchor**:
+The event a Due specification counts from — one of a closed set: `absolute_date`, `effective_date`, `term_end`, `contract_event`, `none`. Only the first three can ever become a date; `contract_event` (receipt, request, termination, confirmation) names an event the Contract never dates, so it stays unresolved permanently.
+
+**Resolution**:
+Turning a Due specification into a calendar date by arithmetic over facts the Contract states, or recording why it cannot be. Carries a **resolution status** — `resolved`, `unresolved_anchor`, or `no_deadline_stated` — and, when resolved, a **derivation**: the human-readable arithmetic behind the date ("initial term end 31 May 2028, minus 60 days, from clause 4"). Deliberately not a confidence score: a status says *what* is uncertain, a number does not.
+
+**Party role**:
+An Obligation's obligor mapped onto the Contract's own parties — `party_a`, `party_b`, `both`, or `third_party` — carried alongside the verbatim obligor text, which is what the UI displays. Positional rather than semantic (not "provider"/"customer") because Aqd ingests contract types whose parties are landlord/tenant or employer/employee. A mutual obligation genuinely has more than one responsible party.
+_Avoid_: owner, assignee, responsible party (an Obligation is owed, not assigned).
+
 **Urgency**:
 The bucket a dated Obligation falls in relative to today — overdue, due soon (within 30 days), or upcoming. A property of the register's placement, not of the Obligation itself.
 
@@ -58,3 +72,24 @@ The shared presentational module both Contract chat and the Product helper rende
 
 **Citation**:
 The link from a sentence in a Contract chat answer to the Clause that grounds it, written inline as an ordinal `[n]` and resolved to a real Clause. Clicking one scrolls to and flashes that Clause in the reader.
+
+### Intelligence
+
+**Contract intelligence**:
+The operational layer over everything the Analyses produced — the Milestone calendar, the Obligations register, and the Risk portfolio read together rather than as separate pages. Answers "what needs attention", not "what does this contract say".
+_Avoid_: analytics, dashboard, insights.
+
+**Milestone**:
+A dated point in a Contract's life that the document states or that arithmetic over stated facts yields: its effective date, its initial term end, and any resolved Obligation deadline. Every Milestone carries its Resolution, so none of them is unexplainable.
+
+**Lifecycle calendar**:
+The cross-contract agenda of Milestones, grouped by month. An agenda rather than a month grid: with dates arriving only from stated facts, the portfolio yields tens of Milestones, not hundreds.
+
+**Attention item**:
+A Clause that carries both a Risk finding and an Obligation — a duty someone must perform that the playbook or the cross-clause pass also flagged. The primitive of the Intelligence layer, and the reason an item is *actionable* rather than merely listed.
+
+**Contract attention**:
+The contract-level aggregation of Attention items and Milestones, ranked by explicit tiers (overdue with high-severity risk first, then due-soon with high severity, and so on). Tiers rather than a blended score, so the ordering can be explained.
+
+**Analysis schema version**:
+The version of the extraction contract an Analysis was produced under. Part of the Analysis cache key, so raising it makes each Contract re-analyse once on demand; an Analysis produced under an older version is **outdated** and says so, rather than silently lacking Due specifications.
