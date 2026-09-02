@@ -20,7 +20,27 @@ export async function proxy(request: NextRequest) {
     },
   )
 
-  await supabase.auth.getUser()
+  try {
+    await supabase.auth.getUser()
+  } catch {
+    // Only a transport failure lands here: an expired or invalid session is
+    // returned as `{ error }`, not thrown, so this catch is specifically
+    // "the auth server could not be reached at all".
+    //
+    // On the free tier that has one overwhelmingly likely cause -- the
+    // project is paused after seven idle days and is waking up. Without this
+    // the failure surfaces as the generic error boundary ("Something went
+    // wrong. Nothing was lost."), which tells a first-time visitor that the
+    // product is broken rather than that it is starting.
+    //
+    // A rewrite, not a redirect: the URL the visitor came for stays in the
+    // address bar, so reloading once the project is awake lands them where
+    // they were going.
+    const { pathname } = request.nextUrl
+    if (!pathname.startsWith('/api/') && pathname !== '/unavailable') {
+      return NextResponse.rewrite(new URL('/unavailable', request.url))
+    }
+  }
   return response
 }
 

@@ -1,0 +1,25 @@
+-- Removes the dev-only code reveal from any database this migration reaches.
+--
+-- `dev_peek_code` (migration 0007) is gated in the application layer -- it
+-- refuses to run when NODE_ENV is production or RESEND_API_KEY is set -- but
+-- the application layer is not its only caller. The function is granted to
+-- `authenticated`, and PostgREST exposes every such function at
+-- /rest/v1/rpc/. Anyone holding a session can call it directly with the anon
+-- key and their own access token.
+--
+-- That includes someone who has just entered a stolen password and is sitting
+-- on the device challenge: the session exists at that point, so they can read
+-- the code that was about to be emailed to the account's real owner and walk
+-- straight through the second factor. No cross-user exposure and no privilege
+-- escalation -- the function only ever reads the caller's own row -- but the
+-- device-trust factor is defeated for the one attacker it exists to stop.
+--
+-- The fix is that the function does not exist, not that it declines. A flag
+-- can be flipped and a guard can be bypassed by a caller nobody anticipated;
+-- an absent function has no call sites at all.
+--
+-- Local development keeps it: `supabase/seed.sql` recreates it on every
+-- `supabase db reset`, and seed files are never applied by `supabase db push`.
+-- So the reveal exists exactly where there is no email transport to replace
+-- it, and nowhere else.
+drop function if exists public.dev_peek_code(public.code_purpose);

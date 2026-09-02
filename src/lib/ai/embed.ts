@@ -8,7 +8,7 @@ function sleep(ms: number) {
 }
 
 async function embedBatch(texts: string[], apiKey: string, model: string, fetchImpl: typeof fetch): Promise<number[][]> {
-  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 4)
+  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 2)
   let lastError: unknown
 
   for (let attempt = 0; attempt < attempts; attempt++) {

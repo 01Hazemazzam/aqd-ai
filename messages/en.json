@@ -13,7 +13,10 @@
       "signIn": "Sign in",
       "continueWithGoogle": "Continue with Google",
       "orDivider": "or",
-      "googleNotConfigured": "Google sign-in isn't configured yet."
+      "googleNotConfigured": "Google sign-in isn't configured yet.",
+      "closedTitle": "This deployment is a demo",
+      "closedSubtitle": "Accounts aren't open here.",
+      "closedBody": "Aqd is running as a portfolio deployment on free infrastructure, with synthetic contracts rather than real ones. Sign-ups are closed; if you already have an account on this instance, sign in below."
     },
     "verify": {
       "title": "Check your email",
@@ -68,7 +71,8 @@
       "codeBurned": "Too many attempts. Request a new code.",
       "rateLimited": "Too many requests. Try again in an hour.",
       "unknown": "Something went wrong. Please try again.",
-      "oauthFailed": "Google sign-in didn't work. Please try again or use your email and password."
+      "oauthFailed": "Google sign-in didn't work. Please try again or use your email and password.",
+      "signupsClosed": "Sign-ups are closed on this deployment."
     }
   },
   "onboarding": {
@@ -120,7 +124,7 @@
     },
     "errors": {
       "unsupported_type": "Only PDF and DOCX files are supported.",
-      "file_too_large": "That file is too large (50MB max).",
+      "file_too_large": "That file is too large ({limit} MB max).",
       "download_failed": "We couldn't read the uploaded file. Try again.",
       "parse_failed": "We couldn't extract text from this document.",
       "unknown": "Something went wrong. Please try again.",
@@ -441,5 +445,10 @@
         "upstream_failed": "The AI service didn't respond. Try again."
       }
     }
+  },
+  "unavailable": {
+    "title": "The demo is waking up",
+    "body": "This deployment runs on free infrastructure that sleeps when nobody is using it. It usually takes under a minute to come back.",
+    "hint": "Reload the page in a moment."
   }
 }

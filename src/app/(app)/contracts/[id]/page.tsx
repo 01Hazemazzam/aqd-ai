@@ -13,6 +13,13 @@ import { RevisionUpload } from './revision-upload'
 import { ClauseHashFocus } from './clause-hash-focus'
 import { buildChatHistory } from '@/lib/chat/build-history'
 
+// The deployment target kills a function at 60s. Declared explicitly rather
+// than left to the platform default (10s), which is shorter than a healthy
+// analysis. The AI retry budget in lib/ai/router.ts is sized to fit inside
+// this with room for the database writes that follow -- change one and check
+// the other.
+export const maxDuration = 60
+
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
 
 export default async function ContractReaderPage({ params }: { params: Promise<{ id: string }> }) {

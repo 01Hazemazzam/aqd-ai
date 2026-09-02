@@ -1,41 +1,29 @@
-'use client'
-import { useActionState } from 'react'
-import { useTranslations } from 'next-intl'
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { GoogleButton } from '@/components/auth/google-button'
-import { signUp } from './actions'
+import { signupsOpen } from '@/lib/deployment'
+import { SignupForm } from './signup-form'
 
-export default function SignupPage() {
-  const t = useTranslations('auth.signup')
-  const e = useTranslations('auth.errors')
-  const [state, action, pending] = useActionState(signUp, null)
+/**
+ * A server component so it can read whether this deployment takes signups.
+ *
+ * On a closed instance Supabase refuses the account at the source, and a form
+ * that submits into a refusal is worse than no form: the visitor reads the
+ * generic failure as a bug in the product they came to look at. Saying it up
+ * front costs one branch and is the truth.
+ */
+export default async function SignupPage() {
+  const t = await getTranslations('auth.signup')
+
+  if (signupsOpen()) return <SignupForm />
 
   return (
-    <AuthShell title={t('title')} subtitle={t('subtitle')}>
-      <GoogleButton label={t('continueWithGoogle')} notConfiguredLabel={t('googleNotConfigured')} />
-      <div className="my-5 flex items-center gap-3 text-xs text-ink-dim">
-        <span className="h-px flex-1 bg-edge" />
-        {t('orDivider')}
-        <span className="h-px flex-1 bg-edge" />
-      </div>
-      <form action={action} className="flex flex-col gap-4">
-        <Input
-          label={t('email')} name="email" type="email" required autoComplete="email"
-          error={state?.error === 'invalidEmail' ? e('invalidEmail') : undefined}
-        />
-        <Input
-          label={t('password')} name="password" type="password" required autoComplete="new-password"
-          error={state?.error === 'weakPassword' ? e('weakPassword') : undefined}
-        />
-        <Button type="submit" loading={pending}>{t('submit')}</Button>
-      </form>
-      <p className="mt-6 text-sm text-ink-dim">
-        {t('haveAccount')}{' '}
-        <Link href="/login" className="text-accent underline">{t('signIn')}</Link>
-      </p>
+    <AuthShell title={t('closedTitle')} subtitle={t('closedSubtitle')}>
+      <p className="text-sm leading-relaxed text-ink-dim">{t('closedBody')}</p>
+      <Link href="/login" className="mt-6 block">
+        <Button className="w-full">{t('signIn')}</Button>
+      </Link>
     </AuthShell>
   )
 }

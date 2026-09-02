@@ -141,6 +141,23 @@ function estimateCost(spec: ModelSpec, inputTokens: number, outputTokens: number
 // upstream is permanently down the way a 429 daily-quota body does.
 const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 15000)
 
+// How many times one provider is asked before giving up on it.
+//
+// This is a wall-clock budget, not a resilience dial, because the whole call
+// happens inside one serverless invocation with a hard ceiling (60s on the
+// deployment target). The worst case has to fit under it with room for the
+// database writes that follow, or a degraded-but-recoverable upstream turns
+// into a killed function and a half-written analysis:
+//
+//   attempts x REQUEST_TIMEOUT_MS  +  backoff  +  one OpenRouter fallback call
+//   2 x 15s                        +  1s       +  15s                  = 46s
+//
+// The previous default of 4 put that at 82s -- comfortably over the ceiling,
+// and only ever reachable when everything was already going wrong. Two
+// attempts still absorbs a single transient 5xx, and the fallback is a third
+// bite at the request from a different provider, which is worth more than a
+// fourth from the one that is failing.
+
 async function fetchWithTimeout(
   fetchImpl: typeof fetch,
   providerLabel: string,
@@ -382,7 +399,7 @@ export async function aiComplete(
     throw new AiDisabledError(`No API key configured for provider "${spec.provider}"`)
   }
 
-  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 4)
+  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 2)
   let lastError: unknown
 
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -418,7 +435,7 @@ async function fetchStreamWithRetry(
   userPrompt: string,
   fetchImpl: typeof fetch,
 ): Promise<Response> {
-  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 4)
+  const attempts = Number(process.env.AI_RETRY_ATTEMPTS ?? 2)
   let lastError: AiUpstreamError | undefined
 
   for (let attempt = 0; attempt < attempts; attempt++) {

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { UploadCloud } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserSupabase } from '@/lib/supabase/client'
+import { MAX_UPLOAD_MB } from '@/lib/upload-limit'
 import { createUploadTarget, ingestContract } from './actions'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'error'
@@ -74,7 +75,7 @@ export function UploadZone() {
       </Button>
       {stage === 'error' && errorKey && (
         <p role="alert" className="mt-2 text-xs text-risk-high">
-          {t(`errors.${errorKey}`)}
+          {t(`errors.${errorKey}`, { limit: MAX_UPLOAD_MB })}
         </p>
       )}
     </div>

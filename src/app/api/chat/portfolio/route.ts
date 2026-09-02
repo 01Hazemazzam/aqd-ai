@@ -8,6 +8,13 @@ import { supabaseIntelligenceReader } from '@/lib/intelligence/supabase-reader'
 import { assemblePortfolioContext, resolvePortfolioCitations } from '@/lib/chat/portfolio-context'
 import { sseEvent } from '@/lib/chat/sse'
 
+// The deployment target kills a function at 60s. Declared explicitly rather
+// than left to the platform default (10s), which is shorter than a healthy
+// analysis. The AI retry budget in lib/ai/router.ts is sized to fit inside
+// this with room for the database writes that follow -- change one and check
+// the other.
+export const maxDuration = 60
+
 // Portfolio scope: the Intelligence assistant.
 //
 // A separate route from /api/chat, not a mode of it. The two scopes retrieve

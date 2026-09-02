@@ -9,6 +9,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { UploadZone } from './upload-zone'
 
+// The deployment target kills a function at 60s. Declared explicitly rather
+// than left to the platform default (10s), which is shorter than a healthy
+// analysis. The AI retry budget in lib/ai/router.ts is sized to fit inside
+// this with room for the database writes that follow -- change one and check
+// the other.
+export const maxDuration = 60
+
 const STATUS_TONE = {
   uploaded: 'neutral',
   parsing: 'accent',

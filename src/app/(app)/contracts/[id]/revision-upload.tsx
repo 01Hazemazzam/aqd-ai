@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { FilePlus2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserSupabase } from '@/lib/supabase/client'
+import { MAX_UPLOAD_MB } from '@/lib/upload-limit'
 import { createRevisionTarget, ingestContract } from '../actions'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'error'
@@ -90,7 +91,7 @@ export function RevisionUpload({ contractId }: { contractId: string }) {
       </Button>
       {stage === 'error' && errorKey && (
         <p role="alert" className="mt-2 text-xs text-risk-high">
-          {t(`errors.${errorKey}`)}
+          {t(`errors.${errorKey}`, { limit: MAX_UPLOAD_MB })}
         </p>
       )}
     </div>

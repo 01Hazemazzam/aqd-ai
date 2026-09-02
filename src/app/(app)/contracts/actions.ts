@@ -8,12 +8,12 @@ import { parseDocument } from '@/lib/ingest/parse'
 import { segmentClauses } from '@/lib/ingest/segment'
 import { sha256Hex } from '@/lib/ingest/checksum'
 import { embedTexts, toPgVector } from '@/lib/ai/embed'
+import { MAX_UPLOAD_BYTES } from '@/lib/upload-limit'
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ])
-const MAX_SIZE_BYTES = 50 * 1024 * 1024
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9.\-_]/g, '_').slice(-100)
@@ -21,7 +21,7 @@ function sanitizeFilename(filename: string) {
 
 export async function createUploadTarget(filename: string, mimeType: string, sizeBytes: number) {
   if (!ALLOWED_MIME_TYPES.has(mimeType)) return { error: 'unsupported_type' as const }
-  if (sizeBytes <= 0 || sizeBytes > MAX_SIZE_BYTES) return { error: 'file_too_large' as const }
+  if (sizeBytes <= 0 || sizeBytes > MAX_UPLOAD_BYTES) return { error: 'file_too_large' as const }
 
   const orgId = await getCurrentOrgId()
   const supabase = await createServerSupabase()
@@ -64,7 +64,7 @@ export async function createRevisionTarget(
   sizeBytes: number,
 ) {
   if (!ALLOWED_MIME_TYPES.has(mimeType)) return { error: 'unsupported_type' as const }
-  if (sizeBytes <= 0 || sizeBytes > MAX_SIZE_BYTES) return { error: 'file_too_large' as const }
+  if (sizeBytes <= 0 || sizeBytes > MAX_UPLOAD_BYTES) return { error: 'file_too_large' as const }
 
   const orgId = await getCurrentOrgId()
   const supabase = await createServerSupabase()
