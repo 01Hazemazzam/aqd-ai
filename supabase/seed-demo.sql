@@ -57,7 +57,11 @@ begin
   -- JWT, which a psql session does not have, so the rows go in directly.
   select org_id into v_org from public.org_members where user_id = v_user order by created_at asc limit 1;
   if v_org is null then
-    insert into public.organizations (name) values ('Demo Legal') returning id into v_org;
+    -- slug is `not null unique`; create_organization() derives it from the
+    -- name and de-duplicates with a numeric suffix. Reproduced rather than
+    -- called because that function is security definer and reads the caller's
+    -- JWT, which a psql session does not have.
+    insert into public.organizations (name, slug) values ('Demo Legal', 'demo-legal') returning id into v_org;
     insert into public.org_members (org_id, user_id, role) values (v_org, v_user, 'owner');
   end if;
 

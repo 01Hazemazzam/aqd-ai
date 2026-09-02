@@ -426,3 +426,34 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# ---------------------------------------------------------------------------
+# Production overrides.
+#
+# Everything above configures the LOCAL stack. The cloud project reads its own
+# settings, and pushing the local ones verbatim would set site_url to
+# 127.0.0.1 and leave signups open -- the two settings this deployment most
+# needs to be different. A [remotes] block scoped to the project ref is the
+# mechanism for saying "these differ in production", so `supabase config push`
+# sends the right values instead of the development ones.
+# ---------------------------------------------------------------------------
+[remotes.production]
+project_id = "wvvzkpzisosqucqwamps"
+
+[remotes.production.auth]
+site_url = "https://aqd-ai-tau.vercel.app"
+additional_redirect_urls = ["https://aqd-ai-tau.vercel.app/**"]
+# The gate. SIGNUPS_CLOSED in the app only changes what the signup screen
+# says; this is what actually refuses the account, at the source, where no
+# route or server action can route around it.
+enable_signup = false
+
+[remotes.production.auth.email]
+enable_signup = false
+
+# Without this the org_id claim never reaches the JWT and every request falls
+# through to jwt_org_id()'s membership lookup -- the app still works, which is
+# exactly why the omission survives unnoticed.
+[remotes.production.auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
