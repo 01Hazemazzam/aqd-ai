@@ -33,7 +33,7 @@ const analysesUpdate = vi.fn()
 // null = cache miss (existing tests' behavior, unchanged). Set by the
 // caching-bug test below to simulate a previous 'partial' analysis on the
 // same content_hash.
-let existingAnalysisRow: { id: string; status: string; error: string | null } | null = null
+let existingAnalysisRow: { id: string; status: string; error: string | null; schema_version?: number } | null = null
 
 function makeSupabase() {
   return {
@@ -156,12 +156,55 @@ describe('analyzeContract partial-failure surfacing', () => {
     expect(finalUpdate?.[0].error).toBeNull()
   })
 
-  it('does short-circuit on a previous fully-successful analysis, unchanged behavior', async () => {
-    existingAnalysisRow = { id: 'analysis-1', status: 'ready', error: null }
+  it('does short-circuit on a previous fully-successful analysis of the current schema', async () => {
+    const { ANALYSIS_SCHEMA_VERSION } = await import('@/lib/ai/schema-version')
+    existingAnalysisRow = { id: 'analysis-1', status: 'ready', error: null, schema_version: ANALYSIS_SCHEMA_VERSION }
     const { analyzeContract } = await import('@/app/(app)/contracts/[id]/analyze-actions')
     const result = await analyzeContract('contract-1')
 
     expect(result).toEqual({ analysisId: 'analysis-1', cached: true })
     expect(aiComplete).not.toHaveBeenCalled()
+  })
+
+  // The source document never changes, so content_hash alone would serve an
+  // analysis produced before the extractor emitted due specifications
+  // forever -- every contract analysed before the change would sit
+  // permanently without deadlines. The schema version is what expires it.
+  it('does NOT short-circuit on a complete analysis produced by an older extraction schema', async () => {
+    existingAnalysisRow = { id: 'analysis-1', status: 'ready', error: null, schema_version: 0 }
+    aiComplete.mockImplementation(async (_tier: string, system: string) => {
+      if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
+      if (system === 'TASK:fields') return jsonResult({ parties: null, effectiveDate: null, termLength: null, governingLaw: null, totalValue: null })
+      if (system === 'TASK:risks') return jsonResult({ findings: [] })
+      if (system === 'TASK:cross') return jsonResult({ findings: [] })
+      if (system === 'TASK:obligations') return jsonResult({ obligations: [] })
+      throw new Error('unexpected task')
+    })
+
+    const { analyzeContract } = await import('@/app/(app)/contracts/[id]/analyze-actions')
+    const result = await analyzeContract('contract-1')
+
+    expect(result).toEqual({ analysisId: 'analysis-1', cached: false })
+    expect(aiComplete).toHaveBeenCalledTimes(5)
+  })
+
+  it('stamps the schema version only when the obligations task actually produced this schema’s output', async () => {
+    const { ANALYSIS_SCHEMA_VERSION } = await import('@/lib/ai/schema-version')
+    aiComplete.mockImplementation(async (_tier: string, system: string) => {
+      // Obligations fails; everything else succeeds.
+      if (system === 'TASK:obligations') throw new Error('upstream')
+      if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
+      if (system === 'TASK:fields') return jsonResult({ parties: null, effectiveDate: null, termLength: null, governingLaw: null, totalValue: null })
+      return jsonResult({ findings: [] })
+    })
+
+    const { analyzeContract } = await import('@/app/(app)/contracts/[id]/analyze-actions')
+    await analyzeContract('contract-1')
+
+    const finalUpdate = analysesUpdate.mock.calls.find((c) => c[0].status === 'ready')
+    // Stamping it current would leave the contract permanently without
+    // deadlines, since it would never miss the cache again.
+    expect(finalUpdate?.[0].schema_version).toBe(0)
+    expect(finalUpdate?.[0].schema_version).not.toBe(ANALYSIS_SCHEMA_VERSION)
   })
 })

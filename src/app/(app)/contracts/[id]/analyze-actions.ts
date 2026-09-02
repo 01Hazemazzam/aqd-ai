@@ -18,6 +18,8 @@ import {
 } from '@/lib/ai/prompts'
 import type { RawFinding } from '@/lib/ai/verify-findings'
 import { dropRedundantRelational } from '@/lib/ai/dedupe-findings'
+import { verifyObligations, type RawObligation as RawObligationInput } from '@/lib/ai/verify-obligations'
+import { ANALYSIS_SCHEMA_VERSION, isCurrentSchema } from '@/lib/ai/schema-version'
 
 type SummaryOutput = { summary: string }
 type FieldsOutput = {
@@ -32,8 +34,10 @@ type FieldsOutput = {
 // (untrusted, every field optional-ish) rather than a tidier local type that
 // would imply the model's output can be relied on.
 type RisksOutput = { findings: RawFinding[] }
-type Obligation = { clauseId: string | null; obligor: string; action: string; due: string | null }
-type ObligationsOutput = { obligations: Obligation[] }
+// The obligations task names the parties it mapped roles onto -- see
+// obligationsPrompt for why it does that rather than reusing the fields task's
+// list.
+type ObligationsOutput = { parties?: string[]; obligations: RawObligationInput[] }
 
 // Preserved per-failure (not just logged) so a total failure across all four
 // tasks can report *why* (quota exhausted vs. no key vs. something else)
@@ -108,7 +112,7 @@ export async function analyzeContract(contractId: string) {
 
   const { data: existing } = await supabase
     .from('analyses')
-    .select('id, status, error')
+    .select('id, status, error, schema_version')
     .eq('org_id', orgId)
     .eq('content_hash', contentHash)
     .maybeSingle()
@@ -120,7 +124,15 @@ export async function analyzeContract(contractId: string) {
   // the user clicks it. Confirmed live: a Re-analyze on a 'partial' analysis
   // returned in 148ms with no Gemini/OpenRouter calls in the server log at
   // all. Only a genuinely complete previous run should short-circuit.
-  if (existing?.status === 'ready' && !existing.error) return { analysisId: existing.id as string, cached: true }
+  //
+  // The schema version joins that gate for the same reason: the document is
+  // unchanged, so content_hash alone would keep serving an analysis produced
+  // before the extractor emitted due specifications -- permanently, for every
+  // contract analysed before the change. A cached result is only a hit if it
+  // was produced by the extraction schema currently in force.
+  if (existing?.status === 'ready' && !existing.error && isCurrentSchema(existing.schema_version as number | null)) {
+    return { analysisId: existing.id as string, cached: true }
+  }
 
   const { data: analysis, error: analysisError } = existing
     ? await supabase.from('analyses').update({ status: 'pending', error: null }).eq('id', existing.id).select('id').single()
@@ -266,6 +278,30 @@ export async function analyzeContract(contractId: string) {
     }
   }
 
+  // Obligations get the same treatment as findings: the model proposes the
+  // timing structure, code checks it against the clause. A specification that
+  // does not check out costs the obligation its date, never the obligation
+  // itself -- an obligation with no deadline is a true statement about what
+  // the document supports; a wrong deadline on a legal calendar is not.
+  const { obligations: verifiedObligations, droppedSpecs } = obligationsRun.ok
+    ? verifyObligations(
+        obligationsRun.data?.obligations ?? [],
+        clauseRows.map((c) => ({ id: c.id, body: c.body })),
+      )
+    : { obligations: [], droppedSpecs: [] }
+
+  if (droppedSpecs.length) {
+    console.warn(
+      `[analyzeContract] dropped ${droppedSpecs.length} ungrounded due specification(s):`,
+      droppedSpecs.map((d) => `${d.reason}: ${d.action}`).join(' | '),
+    )
+  }
+
+  const rawParties = obligationsRun.ok ? obligationsRun.data?.parties : null
+  const obligationParties = Array.isArray(rawParties)
+    ? rawParties.filter((p): p is string => typeof p === 'string' && p.trim().length > 0).slice(0, 2)
+    : null
+
   // Some (not all) tasks failing previously saved silently as a plain
   // 'ready' analysis -- the failed task's section just didn't appear, with
   // nothing telling the user or a future debugger that anything went wrong.
@@ -280,7 +316,12 @@ export async function analyzeContract(contractId: string) {
       error: allSucceeded ? null : 'partial',
       summary: summaryRun.ok ? summaryRun.data?.summary ?? null : null,
       fields: fieldsRun.ok ? fieldsRun.data : null,
-      obligations: obligationsRun.ok ? obligationsRun.data?.obligations ?? null : null,
+      obligations: obligationsRun.ok ? verifiedObligations : null,
+      obligation_parties: obligationsRun.ok ? obligationParties : null,
+      // Stamped only on a run that actually produced this schema's output. A
+      // failed obligations task must not mark the analysis current, or the
+      // contract would never re-run and would sit without deadlines forever.
+      schema_version: obligationsRun.ok ? ANALYSIS_SCHEMA_VERSION : 0,
     })
     .eq('id', analysisId)
 

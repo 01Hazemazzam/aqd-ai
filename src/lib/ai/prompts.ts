@@ -112,8 +112,38 @@ Respond with JSON: {"findings": [{"kind": "asymmetry" | "contradiction" | "depen
 }
 
 export function obligationsPrompt(clauses: PromptClause[]) {
+  // The extractor reads the SHAPE of the deadline; code does the arithmetic.
+  // That split is what lets a date on a legal calendar be traced back to a
+  // quote -- see ADR-0003. Note what is NOT asked for: a computed date. The
+  // model must never turn "60 days before the end of the term" into a date,
+  // because whether that term end is known is a fact about the contract, not
+  // about the clause.
+  //
+  // This task names the two parties itself rather than being handed the
+  // fields task's list: the two run concurrently, and reconciling two
+  // independent extractions by array position would attribute every
+  // obligation in a contract to the wrong party whenever they disagreed.
   return {
-    system: `You are a contract analyst extracting obligations -- who must do what, by when. ${HARD_RULES}\n\nRespond with JSON: {"obligations": [{"clauseId": string | null, "obligor": string, "action": string, "due": string | null}]}. "due" is the stated deadline or trigger in the document's own words, or null if none is stated. Do not compute or infer a date that isn't written in the document. An empty obligations array is a valid answer.`,
+    system: `You are a contract analyst extracting obligations -- who must do what, by when. ${HARD_RULES}
+
+First identify the two parties to this contract, as the document names them, and return them as "parties": [party_a, party_b]. Use the full names the contract gives; if it only ever uses defined roles ("Provider", "Customer"), use those. If the document does not have two identifiable parties, return an empty array.
+
+For each obligation set "partyRole" to whichever of "party_a" or "party_b" owes it -- matching the order of the "parties" array you returned -- or "both" when the clause places it on each/either/both parties, or "third_party" for anyone else. Follow the contract's own definitions: if the document defines a term like "Provider" or "Supplier" as one of the parties, an obligation on that term belongs to that party. Use null only when the clause genuinely does not say who owes the duty. Always keep the obligor exactly as the clause writes it in "obligor" -- "partyRole" is in addition to it, never a replacement.
+
+For "dueSpec", describe the TIMING the clause states, broken into parts. Never compute a calendar date and never put one in "dueSpec" unless the document itself writes that date out.
+- "verbatim": the timing phrase copied exactly from the clause, character for character.
+- "offset" and "unit": the quantity and its unit -- "hour", "day", "business_day", "week", "month", "year". Use "business_day" only where the document says business/working days.
+- "direction": "before", "after", or "on", relative to the anchor.
+- "anchor": WHAT the clause counts from, exactly one of:
+  - "absolute_date" -- the clause names a calendar date; put it in "anchorDate" as written.
+  - "effective_date" -- counted from the contract's effective date or commencement.
+  - "term_end" -- counted from the scheduled expiry of the term: the end of the term, the then-current term, the initial term, or a renewal boundary.
+  - "contract_event" -- counted from an event the contract does not date: receipt, a request, notice, TERMINATION, confirmation of an incident, invoice, delivery, and the like.
+Termination is an event, not the end of the term, and belongs to "contract_event" even though the two sound alike: a contract can be terminated early for breach, or run through several renewals first, so "thirty (30) days after termination" is not thirty days after the term expires and must never be anchored to "term_end".
+  - "none" -- the clause states no timing at all, or only says something like "promptly" or "without undue delay" with no quantity.
+Set "dueSpec" to null when the clause states no timing whatsoever. When the clause says only "promptly" or "without undue delay", use anchor "none" with a null offset and keep the phrase in "verbatim".
+
+Respond with JSON: {"parties": string[], "obligations": [{"clauseId": string | null, "obligor": string, "partyRole": "party_a" | "party_b" | "both" | "third_party" | null, "action": string, "due": string | null, "dueSpec": {"verbatim": string, "offset": number | null, "unit": string | null, "direction": "before" | "after" | "on" | null, "anchor": string, "anchorDate": string | null} | null}]}. "due" stays the stated deadline or trigger in the document's own words, or null if none is stated. Do not compute or infer a date that isn't written in the document. An empty obligations array is a valid answer.`,
     user: renderClausesWithIds(clauses),
   }
 }
