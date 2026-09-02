@@ -49,6 +49,10 @@ _Avoid_: the chatbot, contract bot.
 The assistant grounded only in a curated product-docs corpus, with zero data tools — structurally unable to reach user rows or secrets. Answers questions about using Aqd itself, not about any Contract. Returns one atomic answer.
 _Avoid_: help bot, support bot.
 
+**Analysis rail**:
+The panel beside the document in the contract reader holding everything the Analysis produced — Risk findings, summary and key fields, Obligations — plus Contract chat, behind one tab strip. A Risk finding in the rail expands to quote its own Clause inline, and can jump the document to it. Sticky beside the document on wide screens; above it on narrow ones.
+_Avoid_: sidebar, analysis panel.
+
 **Chat widget**:
 The shared presentational module both Contract chat and the Product helper render through: the message list, typing indicator, scroll behavior, bubble styling, and input form. Owns presentation only — each surface supplies its own transport and, where needed, its own message-content rendering.
 

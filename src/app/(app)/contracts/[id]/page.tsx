@@ -1,19 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import {
-  ArrowLeft,
-  FileWarning,
-  AlertTriangle,
-  Sparkles,
-  LayoutList,
-  ClipboardList,
-  TriangleAlert,
-  Users,
-  CalendarDays,
-  Clock,
-  Scale,
-  Wallet,
-} from 'lucide-react'
+import { ArrowLeft, FileWarning, AlertTriangle, Sparkles } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { ClauseRow } from '@/components/ui/clause-row'
@@ -21,19 +8,11 @@ import { Card } from '@/components/ui/card'
 import { SkeletonText, Skeleton } from '@/components/ui/skeleton'
 import { FadeIn, StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { AnalyzeButton } from './analyze-button'
-import { ChatPanel } from './chat-panel'
+import { AnalysisRail } from './analysis-rail'
 import { ClauseHashFocus } from './clause-hash-focus'
 import { buildChatHistory } from '@/lib/chat/build-history'
 
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
-
-const FIELD_ICON = {
-  parties: Users,
-  effectiveDate: CalendarDays,
-  termLength: Clock,
-  governingLaw: Scale,
-  totalValue: Wallet,
-} as const
 
 export default async function ContractReaderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -89,12 +68,18 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
       severityByClause.set(f.clause_id, f.severity)
     }
   }
-  const unplacedFindings = (findings ?? []).filter((f) => !f.clause_id)
+  // Findings with no clause_id (about a clause the document is MISSING) used
+  // to need their own "other findings" card, because the inline clause gutter
+  // had nowhere to put them. The rail lists every finding together and marks
+  // the unplaced ones, so they no longer need separating here.
   const fields = analysis?.fields as Record<string, string | string[] | null> | null
   const obligations = (analysis?.obligations as Array<{ obligor: string; action: string; due: string | null }> | null) ?? []
 
+  // max-w-6xl, not the 4xl a single column used: the rail takes a fixed
+  // 380px, so a 4xl container left the clause text only ~400px -- narrower
+  // than the rail beside it. At 6xl the document reads at ~740px.
   return (
-    <main className="mx-auto max-w-4xl px-6 py-20 sm:px-10">
+    <main className="mx-auto max-w-6xl px-6 py-20 sm:px-10">
       <ClauseHashFocus />
       <Link href="/contracts" className="mb-6 inline-flex items-center gap-1.5 text-sm text-accent hover:underline">
         <ArrowLeft size={15} aria-hidden="true" className="rtl:rotate-180" />
@@ -164,101 +149,54 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
         </Card>
       )}
 
-      {analysis?.status === 'ready' && (
-        <FadeIn className="mb-8 flex flex-col gap-4">
-          {analysis.summary && (
-            <Card>
-              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
-                <Sparkles size={15} aria-hidden="true" className="text-accent" />
-                {t('summaryTitle')}
-              </h2>
-              <p className="text-sm leading-relaxed text-ink-dim">{analysis.summary}</p>
-            </Card>
-          )}
-
-          {fields && (
-            <Card>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
-                <LayoutList size={15} aria-hidden="true" className="text-accent" />
-                {t('fieldsTitle')}
-              </h2>
-              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-                {Object.entries(fields).map(([key, value]) => {
-                  const Icon = FIELD_ICON[key as keyof typeof FIELD_ICON]
-                  return (
-                    <div key={key} className="flex items-start gap-2.5">
-                      {Icon && <Icon size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-faint" />}
-                      <div>
-                        <dt className="text-ink-faint">{t(`fieldLabels.${key}` as 'fieldLabels.parties')}</dt>
-                        <dd className="text-ink-dim">{Array.isArray(value) ? value.join(', ') || '—' : value ?? '—'}</dd>
-                      </div>
-                    </div>
-                  )
-                })}
-              </dl>
-            </Card>
-          )}
-
-          {obligations.length > 0 && (
-            <Card>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
-                <ClipboardList size={15} aria-hidden="true" className="text-accent" />
-                {t('obligationsTitle')}
-              </h2>
-              <ul className="flex flex-col gap-2 text-sm">
-                {obligations.map((o, i) => (
-                  <li key={i} className="text-ink-dim">
-                    <span className="font-medium text-ink">{o.obligor}</span>: {o.action}
-                    {o.due && <span className="text-ink-faint"> — {o.due}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-
-          {unplacedFindings.length > 0 && (
-            <Card>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
-                <TriangleAlert size={15} aria-hidden="true" className="text-risk-high" />
-                {t('generalFindingsTitle')}
-              </h2>
-              <ul className="flex flex-col gap-2 text-sm">
-                {unplacedFindings.map((f) => (
-                  <li key={f.id} role="alert" className="text-ink-dim">
-                    <span className="font-medium text-risk-high">{f.title}</span>: {f.reason}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-        </FadeIn>
-      )}
-
+      {/* Document beside its analysis. The rail is DOM-first so that on small
+          screens the analysis leads and the contract follows; from `lg` the
+          order flips (document left, rail right) and the rail goes sticky. */}
       {contract.status === 'ready' && !!clauses?.length && (
-        <StaggerList className="flex flex-col gap-3">
-          {clauses.map((clause) => (
-            <StaggerItem key={clause.id}>
-              <ClauseRow
-                id={`clause-${clause.id}`}
-                number={clause.clause_number ?? String(clause.ordinal)}
-                heading={clause.clause_number ? t('clauseHeading', { number: clause.clause_number }) : t('untitledClause')}
-                body={clause.body}
-                dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
-                severity={severityByClause.get(clause.id) ?? 'none'}
-              />
-            </StaggerItem>
-          ))}
-        </StaggerList>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <AnalysisRail
+            contractId={id}
+            clauses={(clauses ?? []).map((c) => ({
+              id: c.id as string,
+              ordinal: c.ordinal as number,
+              clauseNumber: (c.clause_number as string | null) ?? null,
+              lang: (c.lang as string | null) ?? null,
+              body: c.body as string,
+            }))}
+            findings={(findings ?? []).map((f) => ({
+              id: f.id as string,
+              clauseId: (f.clause_id as string | null) ?? null,
+              severity: f.severity as 'high' | 'medium' | 'low',
+              title: f.title as string,
+              reason: f.reason as string,
+            }))}
+            summary={(analysis?.summary as string | null) ?? null}
+            fields={fields}
+            obligations={obligations}
+            initialMessages={initialMessages}
+          />
+
+          <FadeIn className="lg:order-1">
+            <StaggerList className="flex flex-col gap-3">
+              {clauses.map((clause) => (
+                <StaggerItem key={clause.id}>
+                  <ClauseRow
+                    id={`clause-${clause.id}`}
+                    number={clause.clause_number ?? String(clause.ordinal)}
+                    heading={clause.clause_number ? t('clauseHeading', { number: clause.clause_number }) : t('untitledClause')}
+                    body={clause.body}
+                    dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
+                    severity={severityByClause.get(clause.id) ?? 'none'}
+                  />
+                </StaggerItem>
+              ))}
+            </StaggerList>
+          </FadeIn>
+        </div>
       )}
 
       {contract.status === 'ready' && !clauses?.length && (
         <Card><p className="text-sm text-ink-dim">{t('empty')}</p></Card>
-      )}
-
-      {contract.status === 'ready' && !!clauses?.length && (
-        <div className="mt-6">
-          <ChatPanel contractId={id} initialMessages={initialMessages} />
-        </div>
       )}
     </main>
   )

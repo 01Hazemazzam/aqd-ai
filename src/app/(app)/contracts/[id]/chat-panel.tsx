@@ -1,7 +1,5 @@
 'use client'
 import { useTranslations } from 'next-intl'
-import { Sparkles } from 'lucide-react'
-import { Card } from '@/components/ui/card'
 import { ChatWidget, type ChatMessage, type ChatTransport, type Delta } from '@/components/chat-widget'
 import { focusClause } from '@/lib/clause/focus'
 
@@ -92,11 +90,15 @@ async function* streamContractChat(
 }
 
 // initialMessages is fetched server-side by the contract page and handed in
-// here so a reload shows real history immediately -- previously ChatPanel
+// here so a reload shows real history immediately -- previously this widget
 // always mounted with an empty list, so existing chat_messages/citations
 // were fully intact in the database but never loaded back into view (see
 // qa/FINDINGS.md, Sub-project 4's third QA pass).
-export function ChatPanel({
+//
+// Deliberately renders no card or heading of its own: the analysis rail
+// supplies the surrounding chrome (its Chat tab is the heading), and a widget
+// that brought its own Card would double-border inside it.
+export function ContractChat({
   contractId,
   initialMessages = [],
 }: {
@@ -109,20 +111,14 @@ export function ChatPanel({
     streamContractChat(contractId, t('chat.notFound'), question, signal)
 
   return (
-    <Card>
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
-        <Sparkles size={15} aria-hidden="true" className="text-accent" />
-        {t('chat.title')}
-      </h2>
-      <ChatWidget<ContractChatExtra>
-        send={send}
-        renderContent={(m) => (m.citations ? renderWithCitations(m.content, m.citations) : m.content)}
-        initialMessages={initialMessages}
-        emptyText={t('chat.empty')}
-        placeholder={t('chat.placeholder')}
-        sendLabel={t('chat.send')}
-        errorText={(key) => t(`chat.errors.${key}` as 'chat.errors.unknown')}
-      />
-    </Card>
+    <ChatWidget<ContractChatExtra>
+      send={send}
+      renderContent={(m) => (m.citations ? renderWithCitations(m.content, m.citations) : m.content)}
+      initialMessages={initialMessages}
+      emptyText={t('chat.empty')}
+      placeholder={t('chat.placeholder')}
+      sendLabel={t('chat.send')}
+      errorText={(key) => t(`chat.errors.${key}` as 'chat.errors.unknown')}
+    />
   )
 }

@@ -140,6 +140,21 @@
     "fieldsTitle": "Key fields",
     "obligationsTitle": "Obligations",
     "generalFindingsTitle": "Other findings",
+    "reader": {
+      "tabsLabel": "Contract analysis",
+      "tabs": {
+        "risks": "Risks",
+        "summary": "Summary and key fields",
+        "obligations": "Obligations",
+        "chat": "Ask about this contract"
+      },
+      "evidence": "Evidence",
+      "jumpToClause": "Jump to this clause",
+      "clauseNotPresent": "Clause not present",
+      "clauseNotPresentHint": "This finding is about a clause the document never includes, so there is nothing to quote.",
+      "noFindings": "No risk findings on this contract.",
+      "noObligations": "No obligations extracted."
+    },
     "fieldLabels": {
       "parties": "Parties",
       "effectiveDate": "Effective date",

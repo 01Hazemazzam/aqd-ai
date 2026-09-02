@@ -140,6 +140,21 @@
     "fieldsTitle": "الحقول الرئيسية",
     "obligationsTitle": "الالتزامات",
     "generalFindingsTitle": "ملاحظات أخرى",
+    "reader": {
+      "tabsLabel": "تحليل العقد",
+      "tabs": {
+        "risks": "المخاطر",
+        "summary": "الملخص والحقول الرئيسية",
+        "obligations": "الالتزامات",
+        "chat": "اسأل عن هذا العقد"
+      },
+      "evidence": "النص المستند إليه",
+      "jumpToClause": "الانتقال إلى هذا البند",
+      "clauseNotPresent": "البند غير موجود",
+      "clauseNotPresentHint": "تتعلق هذه الملاحظة ببند لا يتضمنه المستند، لذا لا يوجد نص للاقتباس منه.",
+      "noFindings": "لا توجد نتائج مخاطر لهذا العقد.",
+      "noObligations": "لم يتم استخراج أي التزامات."
+    },
     "fieldLabels": {
       "parties": "الأطراف",
       "effectiveDate": "تاريخ السريان",
