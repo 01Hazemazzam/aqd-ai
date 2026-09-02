@@ -55,7 +55,10 @@ describe('buildIntelligence :: lifecycle calendar', () => {
 
   it('explains where the term end came from instead of just asserting it', () => {
     const { milestones } = buildIntelligence([contract()], TODAY)
-    expect(milestones.find((m) => m.kind === 'term_end')?.derivation).toBe('2026-09-01 plus twenty-one (21) months')
+    const termEnd = milestones.find((m) => m.kind === 'term_end')
+    expect(termEnd?.derivation).toMatchObject({ anchor: 'effective_date', anchorDate: '2026-09-01' })
+    // The document's own wording for the term, not a month count it never wrote.
+    expect(termEnd?.termLength).toBe('twenty-one (21) months')
   })
 
   it('places nothing when the contract states no dates', () => {
@@ -74,6 +77,18 @@ describe('buildIntelligence :: lifecycle calendar', () => {
     // 2026-09-01 is past; 2028-05-31 is 77 days out, so upcoming not soon.
     expect(milestones.map((m) => m.urgency)).toEqual(['overdue', 'upcoming'])
   })
+
+  // The calendar reads this to decide whether a past date deserves an
+  // "Overdue" badge. Marking a contract's start date late would badge every
+  // running contract in the portfolio.
+  it('marks lifecycle dates as unmissable and obligation deadlines as missable', () => {
+    const c = contract({
+      obligations: [{ clauseId: 'cl4', obligor: 'Each party', action: 'Give notice', due: renewalSpec().verbatim, dueSpec: renewalSpec() }],
+    })
+    const { milestones } = buildIntelligence([c], TODAY)
+    const missableByKind = Object.fromEntries(milestones.map((m) => [m.kind, m.missable]))
+    expect(missableByKind).toEqual({ effective_date: false, term_end: false, obligation: true })
+  })
 })
 
 describe('buildIntelligence :: obligation deadlines', () => {
@@ -86,7 +101,7 @@ describe('buildIntelligence :: obligation deadlines', () => {
     const { milestones } = buildIntelligence([c], TODAY)
     const ob = milestones.find((m) => m.kind === 'obligation')
     expect(ob?.date).toBe('2028-04-01')
-    expect(ob?.derivation).toBe('initial term end 2028-05-31, minus 60 days')
+    expect(ob?.derivation).toMatchObject({ anchor: 'term_end', anchorDate: '2028-05-31', direction: 'before', offset: 60, unit: 'day' })
     expect(ob?.urgency).toBe('soon') // 17 days from 2028-03-15
   })
 

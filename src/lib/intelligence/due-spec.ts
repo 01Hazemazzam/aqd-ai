@@ -51,14 +51,32 @@ export type UnresolvedReason =
   /** The spec is missing a part it needs to compute anything. */
   | 'incomplete_spec'
 
+/** The arithmetic behind a resolved date, in parts rather than prose.
+ *
+ * Shown to the user instead of a confidence score. Structured because the
+ * sentence has to be written in the reader's language, and this module is
+ * pure -- it knows the arithmetic, not the words for it. The view composes
+ * "initial term end 2028-05-31, minus 60 days" or its Arabic equivalent from
+ * these fields. */
+export interface Derivation {
+  anchor: Extract<Anchor, 'absolute_date' | 'effective_date' | 'term_end'>
+  /** ISO yyyy-mm-dd the arithmetic started from. */
+  anchorDate: string
+  /** Null when the resolved date IS the anchor, with no interval applied. */
+  direction: Direction | null
+  offset: number | null
+  unit: OffsetUnit | null
+  /** The document's own phrase, shown where the parts alone would imply a
+      precision the calendar cannot (an hours-level interval on a day grid). */
+  verbatim: string | null
+}
+
 export interface Resolution {
   status: ResolutionStatus
   /** ISO yyyy-mm-dd when status is 'resolved'. */
   date: string | null
   reason: UnresolvedReason | null
-  /** Human-readable arithmetic behind the date, shown to the user instead of
-      a confidence score -- "initial term end 2028-05-31, minus 60 days". */
-  derivation: string | null
+  derivation: Derivation | null
 }
 
 export interface ContractFacts {
@@ -70,10 +88,6 @@ const UNIT_DAYS: Partial<Record<OffsetUnit, number>> = { day: 1, week: 7 }
 
 function unresolved(reason: UnresolvedReason): Resolution {
   return { status: 'unresolved', date: null, reason, derivation: null }
-}
-
-function anchorLabel(anchor: Anchor): string {
-  return anchor === 'term_end' ? 'initial term end' : anchor === 'effective_date' ? 'effective date' : 'stated date'
 }
 
 /**
@@ -111,13 +125,15 @@ export function resolveDue(spec: DueSpec | null | undefined, facts: ContractFact
     if (base === null) return unresolved('term_not_stated')
   }
 
+  const anchor = spec.anchor as Derivation['anchor']
+
   // "On the effective date" -- an anchor with no interval is already the date.
   if (spec.direction === 'on' || spec.offset === null || spec.offset === 0 || spec.unit === null) {
     return {
       status: 'resolved',
       date: base,
       reason: null,
-      derivation: `${anchorLabel(spec.anchor)} ${base}`,
+      derivation: { anchor, anchorDate: base, direction: null, offset: null, unit: null, verbatim: null },
     }
   }
 
@@ -131,7 +147,7 @@ export function resolveDue(spec: DueSpec | null | undefined, facts: ContractFact
       status: 'resolved',
       date: base,
       reason: null,
-      derivation: `${anchorLabel(spec.anchor)} ${base} (${spec.verbatim})`,
+      derivation: { anchor, anchorDate: base, direction: null, offset: null, unit: null, verbatim: spec.verbatim },
     }
   }
 
@@ -142,11 +158,17 @@ export function resolveDue(spec: DueSpec | null | undefined, facts: ContractFact
 
   if (date === null) return unresolved('incomplete_spec')
 
-  const unitWord = spec.unit === 'week' ? 'week' : spec.unit
   return {
     status: 'resolved',
     date,
     reason: null,
-    derivation: `${anchorLabel(spec.anchor)} ${base}, ${spec.direction === 'before' ? 'minus' : 'plus'} ${spec.offset} ${unitWord}${spec.offset === 1 ? '' : 's'}`,
+    derivation: {
+      anchor,
+      anchorDate: base,
+      direction: spec.direction,
+      offset: spec.offset,
+      unit: spec.unit,
+      verbatim: null,
+    },
   }
 }

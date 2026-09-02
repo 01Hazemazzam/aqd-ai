@@ -9,13 +9,15 @@ import { FadeIn, StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { cn } from '@/components/ui/cn'
 import type { RiskPortfolio, Severity } from '@/lib/risk/portfolio'
 
+// Renders the portfolio's body only: the page heading and the section's view
+// switcher belong to IntelligenceShell, which this now sits inside. Keeping
+// the heading here too would nest a second <main> and repeat the title.
+//
 // Resolved (already-translated) strings, so this view carries no assumption
 // about the i18n key layout -- the same "text in, UI out" shape the obligations
 // view and the chat widget use. Keeps it previewable and testable without a
 // next-intl provider.
 export interface RiskStrings {
-  title: string
-  subtitle: string
   empty: string
   emptyDescription: string
   totalFindings: string
@@ -45,19 +47,13 @@ export function RiskView({ portfolio, strings }: { portfolio: RiskPortfolio; str
 
   if (portfolio.total === 0) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-20 sm:px-10">
-        <FadeIn>
-          <h1 className="text-balance font-serif text-3xl font-medium tracking-tight text-ink">{strings.title}</h1>
-          <p className="mt-2 text-sm text-ink-dim">{strings.subtitle}</p>
-        </FadeIn>
-        <Card className="mt-8">
-          <EmptyState
-            icon={<ShieldCheck size={22} aria-hidden="true" />}
-            title={strings.empty}
-            description={strings.emptyDescription}
-          />
-        </Card>
-      </main>
+      <Card>
+        <EmptyState
+          icon={<ShieldCheck size={22} aria-hidden="true" />}
+          title={strings.empty}
+          description={strings.emptyDescription}
+        />
+      </Card>
     )
   }
 
@@ -74,14 +70,9 @@ export function RiskView({ portfolio, strings }: { portfolio: RiskPortfolio; str
   ]
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-20 sm:px-10">
+    <div>
       <FadeIn>
-        <h1 className="text-balance font-serif text-3xl font-medium tracking-tight text-ink">{strings.title}</h1>
-        <p className="mt-2 text-sm text-ink-dim">{strings.subtitle}</p>
-      </FadeIn>
-
-      <FadeIn delay={0.06}>
-        <Card className="mt-8">
+        <Card>
           <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
             <div>
               <p className="font-serif text-4xl font-medium tabular-nums leading-none text-ink">{portfolio.total}</p>
@@ -250,6 +241,6 @@ export function RiskView({ portfolio, strings }: { portfolio: RiskPortfolio; str
           </StaggerItem>
         ))}
       </StaggerList>
-    </main>
+    </div>
   )
 }

@@ -13,7 +13,7 @@
 // through this one interface.
 
 import { initialTermEnd, parseStatedDate } from './dates'
-import { resolveDue, type ContractFacts, type DueSpec, type Resolution } from './due-spec'
+import { resolveDue, type ContractFacts, type Derivation, type DueSpec, type Resolution } from './due-spec'
 import { normalizeObligor, type PartyRole } from './party-role'
 
 export type Severity = 'high' | 'medium' | 'low'
@@ -67,10 +67,19 @@ export interface Milestone {
   /** ISO yyyy-mm-dd. Only resolved milestones appear. */
   date: string
   urgency: Urgency
+  /** Whether a date in the past means something was NOT DONE. False for
+      lifecycle dates: a contract starting, or entering a renewal period, is
+      not a missed action, and badging it "overdue" would mark every running
+      contract. */
+  missable: boolean
   label: string
-  /** Why this date exists, in words. Empty for lifecycle dates the contract
-      states outright. */
-  derivation: string
+  /** Why this date exists, in parts the view renders in the reader's own
+      language. Null for a date the contract states outright, which needs no
+      explanation. */
+  derivation: Derivation | null
+  /** For a term end: the term length as the document words it, which is the
+      other half of "effective date plus <this>". */
+  termLength: string | null
   clauseId: string | null
 }
 
@@ -157,14 +166,14 @@ function urgencyFor(date: string, today: string): Urgency {
 
 const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1 }
 
-// Only a duty can be overdue. A contract's effective date passing means the
+// Only a duty can be missed. A contract's effective date passing means the
 // contract started, and its initial term end passing means it is in a renewal
-// period -- neither is a missed action, and ranking a contract as urgent
-// because it began eighteen months ago would make the whole view noise. Soon
-// is different: an approaching term end is a real renewal decision, so every
-// milestone counts toward it.
+// period -- neither is a missed action, and ranking or badging a contract as
+// urgent because it began eighteen months ago would make the whole view
+// noise. Soon is different: an approaching term end is a real renewal
+// decision, so every milestone counts toward it.
 function isMissable(m: Milestone): boolean {
-  return m.kind === 'obligation'
+  return m.missable
 }
 
 function tierFor(items: AttentionItem[], milestones: Milestone[], highRiskCount: number): AttentionTier {
@@ -200,10 +209,12 @@ export function buildIntelligence(contracts: InputContract[], today: Date): Inte
         contractId: c.contractId,
         contractTitle: c.title,
         kind: 'effective_date',
+        missable: false,
         date: effective,
         urgency: urgencyFor(effective, todayIso),
         label: c.title,
-        derivation: '',
+        derivation: null,
+        termLength: null,
         clauseId: null,
       })
     }
@@ -214,10 +225,21 @@ export function buildIntelligence(contracts: InputContract[], today: Date): Inte
         contractId: c.contractId,
         contractTitle: c.title,
         kind: 'term_end',
+        missable: false,
         date: termEnd,
         urgency: urgencyFor(termEnd, todayIso),
         label: c.title,
-        derivation: `${effective} plus ${c.termLength}`,
+        // The term end is the one lifecycle date that is computed rather than
+        // stated, so it carries its own arithmetic: effective date + term.
+        derivation: {
+          anchor: 'effective_date',
+          anchorDate: effective!,
+          direction: 'after',
+          offset: null,
+          unit: null,
+          verbatim: null,
+        },
+        termLength: c.termLength,
         clauseId: null,
       })
     }
@@ -245,10 +267,12 @@ export function buildIntelligence(contracts: InputContract[], today: Date): Inte
           contractId: c.contractId,
           contractTitle: c.title,
           kind: 'obligation',
+          missable: true,
           date: resolution.date,
           urgency: urgency!,
           label: o.action,
-          derivation: resolution.derivation ?? '',
+          derivation: resolution.derivation,
+          termLength: null,
           clauseId: o.clauseId,
         })
       }

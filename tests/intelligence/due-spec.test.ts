@@ -33,8 +33,16 @@ describe('resolveDue :: the renewal window, which is the case worth building for
 
   it('shows its arithmetic instead of a confidence score', () => {
     // The user should be able to see WHY a date exists. A number could not
-    // have told them.
-    expect(resolveDue(spec(), FACTS).derivation).toBe('initial term end 2028-05-31, minus 60 days')
+    // have told them. Structured rather than prose so the sentence can be
+    // written in the reader's language.
+    expect(resolveDue(spec(), FACTS).derivation).toEqual({
+      anchor: 'term_end',
+      anchorDate: '2028-05-31',
+      direction: 'before',
+      offset: 60,
+      unit: 'day',
+      verbatim: null,
+    })
   })
 
   it('resolves the ninety-day variant the corpus also contains', () => {
@@ -102,7 +110,7 @@ describe('resolveDue :: the effective date and absolute anchors', () => {
       FACTS,
     )
     expect(r.date).toBe('2026-10-01')
-    expect(r.derivation).toBe('effective date 2026-09-01, plus 30 days')
+    expect(r.derivation).toMatchObject({ anchor: 'effective_date', anchorDate: '2026-09-01', direction: 'after', offset: 30, unit: 'day' })
   })
 
   it('refuses an effective-date anchor when no effective date was extracted', () => {
@@ -145,7 +153,10 @@ describe('resolveDue :: units and directions', () => {
     )
     expect(r.status).toBe('resolved')
     expect(r.date).toBe('2026-09-01')
-    expect(r.derivation).toContain('seventy-two (72) hours')
+    // The document's own phrase, because an offset in hours cannot be shown
+    // on a calendar whose unit is the day.
+    expect(r.derivation?.verbatim).toBe('within seventy-two (72) hours')
+    expect(r.derivation?.offset).toBeNull()
   })
 
   it('resolves an anchor with no interval to the anchor itself', () => {
@@ -157,7 +168,7 @@ describe('resolveDue :: units and directions', () => {
     expect(resolveDue(spec({ direction: null }), FACTS).reason).toBe('incomplete_spec')
   })
 
-  it('writes a singular unit in the derivation for an offset of one', () => {
-    expect(resolveDue(spec({ offset: 1, unit: 'day' }), FACTS).derivation).toBe('initial term end 2028-05-31, minus 1 day')
+  it('carries the offset and unit as parts, leaving the wording to the view', () => {
+    expect(resolveDue(spec({ offset: 1, unit: 'day' }), FACTS).derivation).toMatchObject({ offset: 1, unit: 'day', direction: 'before' })
   })
 })

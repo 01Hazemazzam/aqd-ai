@@ -191,8 +191,7 @@
     "switchLanguage": "Switch language",
     "nav": {
       "contracts": "Contracts",
-      "risk": "Risk",
-      "obligations": "Obligations",
+      "intelligence": "Intelligence",
       "help": "Help",
       "team": "Team",
       "security": "Security",
@@ -292,6 +291,97 @@
       "ai_disabled": "Help isn't configured yet. Add an API key to enable it.",
       "quota_exceeded": "The AI provider's daily quota is exhausted for this model. Try again after it resets, or switch model tiers.",
       "unknown": "Something went wrong. Try again."
+    }
+  },
+  "intelligence": {
+    "title": "Contract intelligence",
+    "subtitle": "What your contracts require, when, and from whom — built only from what the documents actually state.",
+    "clauseLabel": "Clause {number}",
+    "noDeadline": "No date stated",
+    "outdatedTag": "Needs re-analysis",
+    "outdatedNotice": "{count} contract(s) were analysed before deadlines were extracted, so their dates are missing here. Open a contract and choose Re-analyze to fill them in.",
+    "views": {
+      "attention": "Attention",
+      "calendar": "Calendar",
+      "obligations": "Obligations",
+      "risk": "Risk"
+    },
+    "urgency": {
+      "overdue": "Overdue",
+      "soon": "Due soon",
+      "upcoming": "Upcoming"
+    },
+    "tier": {
+      "overdue_high_risk": "High-severity duty past its date",
+      "due_soon_high_risk": "High-severity duty due soon",
+      "overdue": "A duty is past its date",
+      "due_soon": "Something is due soon",
+      "high_risk_undated": "High-severity risk, no date to prompt you",
+      "monitored": "Nothing outstanding"
+    },
+    "role": {
+      "party_a": "First party",
+      "party_b": "Second party",
+      "both": "Both parties",
+      "third_party": "A third party"
+    },
+    "attention": {
+      "empty": "Nothing to act on yet",
+      "emptyDescription": "Analyse a contract and its duties, dates, and risks will be consolidated here.",
+      "summaryAttention": "Risky duties",
+      "summaryOverdue": "Past their date",
+      "summarySoon": "Due within 30 days",
+      "contractsTitle": "Contracts by priority",
+      "itemsTitle": "Where risk meets a duty",
+      "noItems": "No clause carries both a risk finding and an obligation.",
+      "nextLabel": "Next"
+    },
+    "calendar": {
+      "empty": "Nothing dated yet",
+      "emptyDescription": "A date appears here only when the contract states it, or when it follows by arithmetic from facts the contract states.",
+      "kind": {
+        "effective_date": "Effective date",
+        "term_end": "Initial term ends",
+        "obligation": "Obligation"
+      },
+      "derivedFrom": "From"
+    },
+    "obligations": {
+      "empty": "No obligations extracted yet",
+      "emptyDescription": "Analyse a contract to see who must do what, and by when.",
+      "filterAll": "All",
+      "noMatches": "No obligations match this filter.",
+      "statedAs": "Stated as",
+      "status": {
+        "resolved": "Dated",
+        "unresolved": "No date derivable",
+        "no_deadline_stated": "No timing stated"
+      },
+      "reason": {
+        "anchor_not_dated": "Counted from an undated event",
+        "term_not_stated": "Term end not stated",
+        "effective_date_not_stated": "Effective date not stated",
+        "unit_not_computable": "Business days, no calendar given",
+        "incomplete_spec": "Timing not fully stated"
+      }
+    },
+    "derivation": {
+      "separator": ",",
+      "anchor": {
+        "absolute_date": "stated date",
+        "effective_date": "effective date",
+        "term_end": "initial term end"
+      },
+      "direction": {
+        "before": "minus",
+        "after": "plus"
+      },
+      "unit": {
+        "day": "days",
+        "week": "weeks",
+        "month": "months",
+        "year": "years"
+      }
     }
   }
 }
