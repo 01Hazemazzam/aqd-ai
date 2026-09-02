@@ -101,7 +101,15 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
         {t('backToList')}
       </Link>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-serif text-3xl font-medium tracking-tight text-ink text-balance">{contract.title}</h1>
+        {/* break-words is load-bearing: titles come from uploaded filenames
+            and are routinely a single unbroken token
+            ("Aqd_AI_QA_Stress_Test_Contract"). text-balance offers no break
+            opportunity *inside* a token, so without this the heading pushes
+            the document wider than a 375px viewport and the whole page
+            scrolls sideways. */}
+        <h1 className="text-balance break-words font-serif text-3xl font-medium tracking-tight text-ink">
+          {contract.title}
+        </h1>
         {contract.status === 'ready' && !!clauses?.length && (
           <AnalyzeButton contractId={id} label={analysis ? t('reanalyzeCta') : t('analyzeCta')} />
         )}
