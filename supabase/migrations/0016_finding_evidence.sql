@@ -1,0 +1,15 @@
+-- Exact evidence for every risk finding.
+--
+-- A finding previously carried only `reason` -- the model's own prose about
+-- why something is a risk. Nothing tied that prose to specific words in the
+-- clause, so a hallucinated finding and a real one were indistinguishable
+-- after the fact, by a reviewer or by us. `evidence` holds the verbatim
+-- excerpt the finding is based on, copied from the cited clause, which makes
+-- the claim checkable: verifyFindings() drops any finding whose evidence is
+-- not genuinely present in the clause it cites, so grounding is enforced in
+-- code rather than trusted from the prompt.
+--
+-- Nullable, deliberately: a finding about a clause the document is MISSING
+-- (clause_id is null) has no text to quote, and older rows predate this
+-- column.
+alter table public.risk_findings add column evidence text;

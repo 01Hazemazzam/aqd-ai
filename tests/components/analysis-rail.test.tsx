@@ -37,6 +37,7 @@ const ANCHORED: RailFinding = {
   severity: 'high',
   title: 'Unlimited Liability for Provider',
   reason: 'Liability is uncapped.',
+  evidence: 'Each party is capped.',
 }
 
 const UNPLACED: RailFinding = {
@@ -45,6 +46,7 @@ const UNPLACED: RailFinding = {
   severity: 'medium',
   title: 'Missing Governing Law',
   reason: 'No governing law is named.',
+  evidence: null,
 }
 
 function renderRail(over: Partial<Parameters<typeof AnalysisRail>[0]> = {}) {
@@ -74,23 +76,31 @@ describe('AnalysisRail', () => {
     expect(screen.getByText('reader.clauseNotPresent')).toBeInTheDocument()
   })
 
-  it('keeps clause text hidden until a finding is expanded, then quotes it inline', () => {
+  it('keeps evidence hidden until a finding is expanded, then quotes the exact words', () => {
     renderRail()
-    expect(screen.queryByText(/Limitation of Liability/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Each party is capped.')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { expanded: false, name: /Unlimited Liability/ }))
 
     expect(screen.getByText('reader.evidence')).toBeInTheDocument()
-    expect(screen.getByText(/Limitation of Liability\. Each party is capped\./)).toBeInTheDocument()
+    // The stored verbatim quote, not the whole clause -- that is the point of
+    // capturing evidence at analysis time.
+    expect(screen.getByText('Each party is capped.')).toBeInTheDocument()
+  })
+
+  it('falls back to the full clause for a finding analysed before evidence was captured', () => {
+    renderRail({ findings: [{ ...ANCHORED, evidence: null }] })
+    fireEvent.click(screen.getByRole('button', { expanded: false, name: /Unlimited Liability/ }))
+    expect(screen.getByText('Limitation of Liability. Each party is capped.')).toBeInTheDocument()
   })
 
   it('collapses an expanded finding again', () => {
     renderRail()
     const row = screen.getByRole('button', { expanded: false, name: /Unlimited Liability/ })
     fireEvent.click(row)
-    expect(screen.getByText(/Limitation of Liability/)).toBeInTheDocument()
+    expect(screen.getByText('Each party is capped.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { expanded: true, name: /Unlimited Liability/ }))
-    expect(screen.queryByText(/Limitation of Liability/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Each party is capped.')).not.toBeInTheDocument()
   })
 
   it('offers no evidence or jump for a finding whose clause is absent from the document', () => {

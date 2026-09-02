@@ -5,6 +5,7 @@ import { getCurrentOrgId } from '@/lib/org/current'
 import { sha256Hex } from '@/lib/ingest/checksum'
 import { aiComplete, type Tier } from '@/lib/ai/router'
 import { classifyAnalysisError, mapTaskError, type TaskErrorInfo } from '@/lib/ai/classify-error'
+import { verifyFindings } from '@/lib/ai/verify-findings'
 import {
   summaryPrompt,
   fieldsPrompt,
@@ -30,6 +31,7 @@ type RiskFinding = {
   title: string
   reason: string
   reasonAr: string
+  evidence: string | null
 }
 type RisksOutput = { findings: RiskFinding[] }
 type Obligation = { clauseId: string | null; obligor: string; action: string; due: string | null }
@@ -178,14 +180,27 @@ export async function analyzeContract(contractId: string) {
     return { error: errorCode }
   }
 
-  const validClauseIds = new Set(clauseRows.map((c) => c.id))
-
   await supabase.from('risk_findings').delete().eq('analysis_id', analysisId)
   if (risksRun.ok && risksRun.data) {
-    const findings = risksRun.data.findings.filter((f) => f.clauseId === null || validClauseIds.has(f.clauseId))
-    if (findings.length) {
+    // Grounding is enforced here, not trusted from the prompt: a finding
+    // survives only if it cites a real clause AND quotes words genuinely in
+    // it. Asking the model for evidence makes a fabricated finding *possible*
+    // to catch; this check is what actually catches it.
+    const { kept, rejected } = verifyFindings(risksRun.data.findings, clauseRows.map((c) => ({ id: c.id, body: c.body })))
+
+    // Logged, never silent: a run that drops most of its findings is the
+    // signal that a prompt or model change has regressed, and without this
+    // the only symptom is findings quietly going missing.
+    if (rejected.length) {
+      console.warn(
+        `[analyzeContract] dropped ${rejected.length}/${risksRun.data.findings.length} ungrounded finding(s):`,
+        rejected.map((r) => `${r.reason}: ${r.finding.title}`).join(' | '),
+      )
+    }
+
+    if (kept.length) {
       await supabase.from('risk_findings').insert(
-        findings.map((f) => ({
+        kept.map((f) => ({
           analysis_id: analysisId,
           org_id: orgId,
           clause_id: f.clauseId,
@@ -194,6 +209,7 @@ export async function analyzeContract(contractId: string) {
           title: f.title,
           reason: f.reason,
           reason_ar: f.reasonAr,
+          evidence: f.evidence,
         })),
       )
     }

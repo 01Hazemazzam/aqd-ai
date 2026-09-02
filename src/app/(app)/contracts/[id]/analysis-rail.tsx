@@ -50,6 +50,10 @@ export interface RailFinding {
   severity: Severity
   title: string
   reason: string
+  /** The verbatim words this finding was based on, verified against the
+      clause at analysis time. Null for missing-clause findings, and for
+      findings produced before evidence was captured. */
+  evidence: string | null
 }
 
 type Tab = 'risks' | 'summary' | 'obligations' | 'chat'
@@ -173,11 +177,18 @@ export function AnalysisRail({
                             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                               {t('reader.evidence')}
                             </p>
+                            {/* The model's own verified quote when there is
+                                one -- the exact words the finding rests on --
+                                falling back to the whole clause for findings
+                                analysed before evidence was captured. */}
                             <p
                               dir={clause.lang === 'ar' ? 'rtl' : 'ltr'}
-                              className="text-xs leading-relaxed text-ink-dim"
+                              className={cn(
+                                'text-xs leading-relaxed text-ink-dim',
+                                f.evidence && 'border-s-2 border-brass ps-2.5 italic',
+                              )}
                             >
-                              {clause.body}
+                              {f.evidence ?? clause.body}
                             </p>
                             <button
                               type="button"

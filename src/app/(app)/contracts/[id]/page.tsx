@@ -36,7 +36,7 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
       ? supabase.from('clauses').select('id, ordinal, clause_number, lang, body').eq('version_id', version.id).order('ordinal', { ascending: true })
       : Promise.resolve({ data: null }),
     analysis
-      ? supabase.from('risk_findings').select('id, clause_id, severity, title, reason').eq('analysis_id', analysis.id)
+      ? supabase.from('risk_findings').select('id, clause_id, severity, title, reason, evidence').eq('analysis_id', analysis.id)
       : Promise.resolve({ data: null }),
     chat
       ? supabase.from('chat_messages').select('id, role, content, not_found').eq('chat_id', chat.id).order('created_at', { ascending: true })
@@ -169,6 +169,7 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
               severity: f.severity as 'high' | 'medium' | 'low',
               title: f.title as string,
               reason: f.reason as string,
+              evidence: (f.evidence as string | null) ?? null,
             }))}
             summary={(analysis?.summary as string | null) ?? null}
             fields={fields}
