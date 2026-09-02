@@ -162,6 +162,7 @@ export default async function IntelligencePage({
               year: t('derivation.unit.year'),
             },
             statedAs: t('obligations.statedAs'),
+            obligorAs: t('obligations.obligorAs'),
             status: {
               resolved: t('obligations.status.resolved'),
               unresolved: t('obligations.status.unresolved'),

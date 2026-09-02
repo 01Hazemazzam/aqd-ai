@@ -28,6 +28,8 @@ export interface ObligationStrings extends DerivationStrings {
   noMatches: string
   noDeadline: string
   statedAs: string
+  /** Label for the document's own wording of the obligor. */
+  obligorAs: string
   status: Record<ResolutionStatus, string>
   reason: Record<UnresolvedReason, string>
   role: Record<PartyRole, string>
@@ -44,11 +46,27 @@ const STATUS_TONE: Record<ResolutionStatus, string> = {
   no_deadline_stated: 'text-ink-faint',
 }
 
-function roleLabel(o: TrackedObligation, strings: ObligationStrings): string {
-  if (o.role === null) return o.obligor
-  if (o.role === 'both' || o.role === 'third_party') return strings.role[o.role]
-  const names = strings.partyNames[o.contractId] ?? []
-  return (o.role === 'party_a' ? names[0] : names[1]) || o.obligor
+// Who owes the duty, said one consistent way -- plus the document's own words
+// when they differ.
+//
+// QA found the register listing "either party", "Either party", "both
+// parties" and "The affected party" as four separate actors, which makes the
+// list read as though four different people owe something. The normalized
+// label is what the reader scans; the verbatim obligor is still shown beside
+// it, because the document's wording is the fact and the label is our reading
+// of it. When an obligor maps to nothing -- "Any renewal-term pricing", which
+// the extractor mistook for an actor -- the verbatim text stands alone rather
+// than being dressed up as a party.
+function roleLabel(o: TrackedObligation, strings: ObligationStrings): { label: string; original: string | null } {
+  const verbatim = o.obligor?.trim() ?? ''
+  if (o.role === null) return { label: verbatim, original: null }
+
+  const label =
+    o.role === 'both' || o.role === 'third_party'
+      ? strings.role[o.role]
+      : ((strings.partyNames[o.contractId] ?? [])[o.role === 'party_a' ? 0 : 1] || verbatim)
+
+  return { label, original: label.toLowerCase() === verbatim.toLowerCase() ? null : verbatim || null }
 }
 
 export function ObligationsView({
@@ -130,7 +148,7 @@ export function ObligationsView({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <span dir="auto" className="text-sm font-medium text-ink">
-                    {roleLabel(o, strings)}
+                    {roleLabel(o, strings).label}
                   </span>
                   <span className={cn('text-[11px] font-medium', STATUS_TONE[o.resolution.status])}>
                     {o.resolution.status === 'resolved' && o.resolution.date
@@ -144,6 +162,14 @@ export function ObligationsView({
                 <p dir="auto" className="mt-1 text-sm leading-relaxed text-ink-dim">
                   {o.action}
                 </p>
+
+                {/* The document's own word for who owes this, kept whenever it
+                    differs from the normalized label above. */}
+                {roleLabel(o, strings).original && (
+                  <p dir="auto" className="mt-1 text-[11px] text-ink-faint">
+                    {strings.obligorAs} “{roleLabel(o, strings).original}”
+                  </p>
+                )}
 
                 {/* The document's own words for the timing, always shown --
                     it is the fact, where the resolved date is a derivation

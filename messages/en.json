@@ -364,7 +364,8 @@
         "effective_date_not_stated": "Effective date not stated",
         "unit_not_computable": "Business days, no calendar given",
         "incomplete_spec": "Timing not fully stated"
-      }
+      },
+      "obligorAs": "Named in the document as"
     },
     "derivation": {
       "separator": ",",

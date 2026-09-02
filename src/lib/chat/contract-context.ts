@@ -65,9 +65,19 @@ export function fitsBudget(clauses: Array<{ body: string }>, budget: number = CL
   return true
 }
 
+// Two numbering systems sit in this block and they are NOT the same: the
+// bracketed ordinal is a source index over everything the model was given,
+// while the document has its own label for the clause. They differ by however
+// many unnumbered clauses (a preamble, recitals) come first -- throughout the
+// QA fixture, by one.
+//
+// Rendering them adjacent and unlabelled, as `[30] CLAUSE (29)`, invited
+// exactly the confusion it looks like it would: a live answer cited [1] for a
+// fact that came from clause 29, while citing [30] correctly for the very
+// next sentence about that same clause. So each number now says what it is.
 function renderClause(c: ContextClause, ordinal: number): string {
-  const number = c.clauseNumber ? ` (${c.clauseNumber})` : ''
-  return `[${ordinal}] CLAUSE${number}\n${c.body}`
+  const label = c.clauseNumber ? `, which the document labels "${c.clauseNumber}"` : ', which the document does not number'
+  return `[${ordinal}] CLAUSE${label}\n${c.body}`
 }
 
 /**

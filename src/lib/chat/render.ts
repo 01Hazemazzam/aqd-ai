@@ -80,9 +80,23 @@ const UNRESOLVED_REASON: Record<string, string> = {
   incomplete_spec: 'the stated timing is missing a part needed to compute a date',
 }
 
+// A computed deadline is built from two facts with different provenance, and
+// QA asked for that to be visible rather than implied: the INTERVAL ("sixty
+// days before") is stated in this record's own clause, while the ANCHOR it
+// counts from is either stated outright or itself computed from the
+// contract's effective date and term. Saying which is which is the whole
+// point of showing a derivation instead of a confidence score.
 export function renderResolution(r: Resolution): string {
   if (r.status === 'no_deadline_stated') return 'no timing stated in the contract'
-  if (r.status === 'resolved' && r.date) return `COMPUTED ${r.date}${renderDerivation(r.derivation, null)}`
+  if (r.status === 'resolved' && r.date) {
+    const provenance =
+      r.derivation?.anchor === 'term_end'
+        ? " -- the interval is stated in THIS record's clause; the initial term end it counts back from is itself computed from the contract's stated effective date and term"
+        : r.derivation?.anchor === 'effective_date'
+          ? " -- the interval is stated in THIS record's clause; the effective date it counts from is stated in the contract"
+          : ''
+    return `COMPUTED ${r.date}${renderDerivation(r.derivation, null)}${provenance}`
+  }
   return `no date derivable -- ${r.reason ? UNRESOLVED_REASON[r.reason] : 'the contract does not support one'}`
 }
 

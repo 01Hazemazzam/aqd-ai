@@ -344,3 +344,17 @@ describe('assemblePortfolioContext :: no internal labels reach the model', () =>
     }
   })
 })
+
+describe('QA follow-up :: where a computed deadline comes from', () => {
+  // QA asked for it to be immediately obvious which clause supplies the
+  // interval and which supplies the anchor -- they have different provenance,
+  // and only one of them is citable.
+  it('says which half of a computed deadline is stated and which is itself computed', async () => {
+    const ctx = await context([analysis({ id: 'a1', contract_id: 'c1', obligations: [RENEWAL_NOTICE] })], [ORION])
+
+    expect(ctx.text).toContain("the interval is stated in THIS record's clause")
+    expect(ctx.text).toContain('itself computed from the contract')
+    // And the arithmetic is still shown in full.
+    expect(ctx.text).toContain('COMPUTED 2028-04-01 (initial term end 2028-05-31, minus 60 days)')
+  })
+})

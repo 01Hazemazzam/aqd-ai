@@ -364,7 +364,8 @@
         "effective_date_not_stated": "تاريخ النفاذ غير منصوص عليه",
         "unit_not_computable": "أيام عمل دون تقويم محدَّد",
         "incomplete_spec": "التوقيت غير مكتمل النص"
-      }
+      },
+      "obligorAs": "ورد في المستند باسم"
     },
     "derivation": {
       "separator": "،",

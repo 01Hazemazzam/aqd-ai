@@ -24,12 +24,23 @@ const MUTUAL = [
   'each party',
   'either party',
   'both parties',
-  'the parties',
+  'parties',
   'all parties',
   'each of the parties',
   'affected party',
   'receiving party',
   'disclosing party',
+  // Role-in-the-moment phrasings. The document names whichever side happens
+  // to be sending, requesting or indemnifying at the time, which is a duty
+  // that can fall on either of them -- not on a third party.
+  'sending party',
+  'notifying party',
+  'requesting party',
+  'indemnifying party',
+  'indemnified party',
+  'non-breaching party',
+  'breaching party',
+  'terminating party',
 ]
 
 const MUTUAL_AR = ['الطرفان', 'الطرفين', 'كلا الطرفين', 'أي من الطرفين', 'كل طرف', 'الأطراف']
@@ -40,6 +51,11 @@ function normalize(text: string): string {
     .replace(/[.,;:'"()‘’“”]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    // A leading article is not part of who the party is. Without this,
+    // "affected party" mapped to `both` while "The affected party" -- the same
+    // duty, worded differently three clauses later -- fell through to null and
+    // grouped separately in the register. The live corpus contains both forms.
+    .replace(/^(?:the|a|an) /, '')
 }
 
 /** Words too generic to identify a party by overlap alone. */

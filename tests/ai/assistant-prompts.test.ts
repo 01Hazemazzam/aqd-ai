@@ -93,7 +93,11 @@ describe('contractPrompt :: what the model is entitled to claim', () => {
   // NOT_FOUND on a contract that had no stored analysis -- true, useless, and
   // easily read as "no risks".
   it('distinguishes "no analysis stored" from "no risk"', () => {
-    expect(contractPrompt('q', CONTEXT, 'full').system).toMatch(/not that the contract is free of risk/)
+    // Both halves, in order: QA found that stating only the first lets
+    // "none recorded" be read as "none exist".
+    const { system } = contractPrompt('q', CONTEXT, 'full')
+    expect(system).toContain('no risk findings are recorded for this contract')
+    expect(system).toContain('NOT a finding that the contract is low-risk or free of risk')
   })
 
   it('does not put conversation history in the position of a source', () => {
@@ -125,5 +129,43 @@ describe('citations in the Arabic half of the product', () => {
     for (const system of [portfolioPrompt('q', CONTEXT).system, contractPrompt('q', CONTEXT, 'full').system]) {
       expect(system).toContain('Square brackets mean one thing only')
     }
+  })
+})
+
+describe('QA follow-up :: citation precision and presentation', () => {
+  // The source index and the document's own clause label are different
+  // numbers, and they sat adjacent and unlabelled as `[30] CLAUSE (29)`.
+  it('tells the model the bracketed number is not the document’s clause label', () => {
+    for (const system of [portfolioPrompt('q', CONTEXT).system, contractPrompt('q', CONTEXT, 'full').system]) {
+      expect(system).toContain('It is NOT the document')
+      expect(system).toMatch(/Never cite \[1\], or any record, as a default/)
+    }
+  })
+
+  // A fact stated on a cover page AND in the operative clause should cite the
+  // clause -- a reader following a citation wants the provision.
+  it('prefers the operative clause over a summary that repeats it', () => {
+    expect(contractPrompt('q', CONTEXT, 'full').system).toContain('cite the operative clause')
+  })
+
+  // QA: Arabic answers leaked "(Provider)" and "(Clause 32)" as bare English.
+  it('requires Arabic answers to be structurally Arabic, defined terms aside', () => {
+    for (const system of [portfolioPrompt('q', CONTEXT).system, contractPrompt('q', CONTEXT, 'full').system]) {
+      expect(system).toContain('the STRUCTURE of the sentence is Arabic too')
+      expect(system).toContain('البند 32')
+    }
+  })
+
+  it('asks for a multi-part question to be answered part by part', () => {
+    for (const system of [portfolioPrompt('q', CONTEXT).system, contractPrompt('q', CONTEXT, 'full').system]) {
+      expect(system).toContain('each under its own short heading line')
+    }
+  })
+
+  // QA: "none recorded" must never be readable as "none exist".
+  it('spells out both halves of the no-findings answer', () => {
+    const { system } = contractPrompt('q', CONTEXT, 'full')
+    expect(system).toContain('no risk analysis has been stored')
+    expect(system).toContain('NOT a finding that the contract is low-risk')
   })
 })
