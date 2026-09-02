@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, CalendarDays, ClipboardList, ShieldAlert, Radar } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ClipboardList, MessagesSquare, ShieldAlert, Radar } from 'lucide-react'
 import { cn } from '@/components/ui/cn'
 import { FadeIn } from '@/components/ui/reveal'
 import type { View } from './page'
@@ -15,9 +15,10 @@ const ICON: Record<View, typeof Radar> = {
   calendar: CalendarDays,
   obligations: ClipboardList,
   risk: ShieldAlert,
+  ask: MessagesSquare,
 }
 
-const ORDER: readonly View[] = ['attention', 'calendar', 'obligations', 'risk']
+const ORDER: readonly View[] = ['attention', 'calendar', 'obligations', 'risk', 'ask']
 
 export interface ShellStrings {
   title: string

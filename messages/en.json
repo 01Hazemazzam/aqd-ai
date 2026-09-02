@@ -304,7 +304,8 @@
       "attention": "Attention",
       "calendar": "Calendar",
       "obligations": "Obligations",
-      "risk": "Risk"
+      "risk": "Risk",
+      "ask": "Ask"
     },
     "urgency": {
       "overdue": "Overdue",
@@ -381,6 +382,18 @@
         "week": "weeks",
         "month": "months",
         "year": "years"
+      }
+    },
+    "ask": {
+      "empty": "Ask about deadlines, obligations, risks, or which contracts need attention. Every answer cites the record it came from.",
+      "placeholder": "Which contracts need attention?",
+      "send": "Ask",
+      "notFound": "There's nothing in the analysed contracts that answers that.",
+      "errors": {
+        "unknown": "Something went wrong answering that.",
+        "ai_disabled": "AI features aren't configured for this workspace.",
+        "quota_exceeded": "The AI service has hit its request limit. Try again shortly.",
+        "upstream_failed": "The AI service didn't respond. Try again."
       }
     }
   }

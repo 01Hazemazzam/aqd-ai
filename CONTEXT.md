@@ -44,7 +44,7 @@ _Avoid_: date hint, parsed due.
 The event a Due specification counts from — one of a closed set: `absolute_date`, `effective_date`, `term_end`, `contract_event`, `none`. Only the first three can ever become a date; `contract_event` (receipt, request, termination, confirmation) names an event the Contract never dates, so it stays unresolved permanently.
 
 **Resolution**:
-Turning a Due specification into a calendar date by arithmetic over facts the Contract states, or recording why it cannot be. Carries a **resolution status** — `resolved`, `unresolved_anchor`, or `no_deadline_stated` — and, when resolved, a **derivation**: the human-readable arithmetic behind the date ("initial term end 31 May 2028, minus 60 days, from clause 4"). Deliberately not a confidence score: a status says *what* is uncertain, a number does not.
+Turning a Due specification into a calendar date by arithmetic over facts the Contract states, or recording why it cannot be. Carries a **resolution status** — `resolved`, `unresolved`, or `no_deadline_stated` — and, when unresolved, a separate **reason** naming what stopped it (`anchor_not_dated`, `term_not_stated`, `effective_date_not_stated`, `unit_not_computable`, `incomplete_spec`). Status and reason are two axes because they answer different questions: "10 Business Days after the Effective Date" has a perfectly resolvable Anchor and an uncomputable unit, so a single status word would have to lie about one of them. When resolved it also carries a **derivation**: the arithmetic behind the date, in parts (anchor, anchor date, direction, offset, unit) rather than prose, so the sentence can be written in the reader's own language. Deliberately not a confidence score: a status says *what* is uncertain, a number does not.
 
 **Party role**:
 An Obligation's obligor mapped onto the Contract's own parties — `party_a`, `party_b`, `both`, or `third_party` — carried alongside the verbatim obligor text, which is what the UI displays. Positional rather than semantic (not "provider"/"customer") because Aqd ingests contract types whose parties are landlord/tenant or employer/employee. A mutual obligation genuinely has more than one responsible party.
@@ -56,8 +56,24 @@ The bucket a dated Obligation falls in relative to today — overdue, due soon (
 ### Chat
 
 **Contract chat**:
-The citation-locked conversation grounded in one Contract's clauses. Every factual answer cites the Clause it came from by ordinal, or returns NOT_FOUND rather than inventing a fact. Streams its answer token by token.
+The citation-locked conversation grounded in one Contract — its clauses, and the Risk findings and Obligations its Analysis produced. Every factual answer cites the record it came from by ordinal, or returns NOT_FOUND rather than inventing a fact. Streams its answer token by token. One of the two scopes of the Intelligence assistant; the other is Portfolio chat.
 _Avoid_: the chatbot, contract bot.
+
+**Portfolio chat**:
+The second scope of the Intelligence assistant: a conversation about the whole portfolio rather than one Contract, grounded in the Intelligence layer instead of in clause text. Answers "which Contracts need attention", "what is due when", "who owes what". A separate thread from Contract chat, because the two are grounded in different evidence and guarantee different things. See [ADR-0004](docs/adr/0004-two-chat-scopes-one-context-layer.md).
+_Avoid_: global chat, portfolio bot.
+
+**Grounded context**:
+Everything a chat scope hands the model for one question: the assembled text plus the map from each ordinal back to the record it points at. Built by one function per scope so the numbering and the citation resolution cannot drift apart. Only records that can be cited are numbered — a claim with no Clause and no Risk finding behind it gets no ordinal, and so cannot be referenced as a fact.
+
+**Register**:
+Which kind of thing a statement in a grounded context is, marked in the context itself so an answer can keep them apart. Three: **stated** (what the Contract says), **extracted** (Risk findings and Obligations, each already verified against a Clause), and **computed** (dates Aqd's arithmetic produced from stated facts, written in no Contract). A computed value may only be stated alongside its Derivation.
+
+**Context budget**:
+The character count of Clause text above which Contract chat stops sending the whole document and falls back to retrieval. Characters rather than tokens because it must be deterministic and free to compute. Which side of it a question lands on changes what NOT_FOUND means: with the whole document in context the Contract genuinely does not say it; with excerpts, only that the excerpts do not.
+
+**Coverage warning**:
+The named list of in-scope Contracts whose Analysis predates deadline extraction, appended to any answer about timing. Named rather than counted, because "nothing is due next month" is a *false* answer — not merely an incomplete one — when the deadline data for two thirds of the portfolio was never extracted.
 
 **Product helper**:
 The assistant grounded only in a curated product-docs corpus, with zero data tools — structurally unable to reach user rows or secrets. Answers questions about using Aqd itself, not about any Contract. Returns one atomic answer.

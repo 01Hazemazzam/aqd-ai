@@ -1,27 +1,20 @@
 import { getLocale, getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
-import { isCurrentSchema } from '@/lib/ai/schema-version'
-import { buildIntelligence, type InputContract, type InputFinding, type InputObligation } from '@/lib/intelligence/build'
+import { loadIntelligence } from '@/lib/intelligence/load'
+import { supabaseIntelligenceReader } from '@/lib/intelligence/supabase-reader'
 import { buildRiskPortfolio, type RawFinding } from '@/lib/risk/portfolio'
 import { IntelligenceShell } from './intelligence-shell'
 import { AttentionView } from './attention-view'
 import { CalendarView } from './calendar-view'
 import { ObligationsView } from './obligations-view'
+import { AskView } from './ask-view'
+import { loadPortfolioHistory } from '@/lib/chat/portfolio-history'
 import { RiskView } from '../risk/risk-view'
 
-export type View = 'attention' | 'calendar' | 'obligations' | 'risk'
+export type View = 'attention' | 'calendar' | 'obligations' | 'risk' | 'ask'
 
-const VIEWS: readonly View[] = ['attention', 'calendar', 'obligations', 'risk']
-
-type StoredObligation = {
-  clauseId?: string | null
-  obligor: string
-  partyRole?: InputObligation['partyRole']
-  action: string
-  due: string | null
-  dueSpec?: InputObligation['dueSpec']
-}
+const VIEWS: readonly View[] = ['attention', 'calendar', 'obligations', 'risk', 'ask']
 
 export default async function IntelligencePage({
   searchParams,
@@ -37,106 +30,29 @@ export default async function IntelligencePage({
   const orgId = await getCurrentOrgId()
   const supabase = await createServerSupabase()
 
-  // One read of every ready analysis, plus the findings they own. Everything
-  // the four views need is derived from this -- the whole point of a single
-  // aggregation is that the page does not fan out per view.
-  const [{ data: analyses }, { data: contracts }] = await Promise.all([
-    supabase
-      .from('analyses')
-      .select('id, contract_id, obligations, obligation_parties, fields, schema_version, created_at')
-      .eq('org_id', orgId)
-      .eq('status', 'ready')
-      .order('created_at', { ascending: false }),
-    supabase.from('contracts').select('id, title').eq('org_id', orgId),
-  ])
-
-  const titleById = new Map((contracts ?? []).map((c) => [c.id as string, c.title as string]))
-
-  // A contract can have several analyses (re-analysis, new versions); rows
-  // come back newest-first, so the first sighting of a contract_id is its
-  // latest. Later rows are superseded, exactly as the risk portfolio treats
-  // them.
-  const seen = new Set<string>()
-  const latest: Array<{ id: string; contractId: string; row: NonNullable<typeof analyses>[number] }> = []
-  for (const a of analyses ?? []) {
-    const contractId = a.contract_id as string
-    if (seen.has(contractId) || !titleById.has(contractId)) continue
-    seen.add(contractId)
-    latest.push({ id: a.id as string, contractId, row: a })
-  }
-
-  const { data: findingRows } = latest.length
-    ? await supabase
-        .from('risk_findings')
-        .select('id, analysis_id, clause_id, kind, severity, title, reason, reason_ar, rule_key')
-        .in(
-          'analysis_id',
-          latest.map((l) => l.id),
-        )
-    : { data: null }
-
-  const findingsByAnalysis = new Map<string, typeof findingRows>()
-  for (const f of findingRows ?? []) {
-    const list = findingsByAnalysis.get(f.analysis_id as string) ?? []
-    list.push(f)
-    findingsByAnalysis.set(f.analysis_id as string, list as typeof findingRows)
-  }
-
-  const input: InputContract[] = latest.map(({ id, contractId, row }) => {
-    const fields = (row.fields as Record<string, unknown> | null) ?? null
-    const storedParties = row.obligation_parties as string[] | null
-    const fieldParties = Array.isArray(fields?.parties) ? (fields!.parties as string[]) : []
-    return {
-      contractId,
-      title: titleById.get(contractId)!,
-      effectiveDate: (fields?.effectiveDate as string | null) ?? null,
-      termLength: (fields?.termLength as string | null) ?? null,
-      // The obligations task's own party list defines party_a/party_b; the
-      // fields task's list is the display fallback for older analyses.
-      parties: storedParties?.length ? storedParties : fieldParties,
-      findings: (findingsByAnalysis.get(id) ?? []).map(
-        (f): InputFinding => ({
-          id: f.id as string,
-          clauseId: (f.clause_id as string | null) ?? null,
-          kind: (f.kind as InputFinding['kind']) ?? 'playbook',
-          severity: f.severity as InputFinding['severity'],
-          title: f.title as string,
-        }),
-      ),
-      obligations: ((row.obligations as StoredObligation[] | null) ?? []).map(
-        (o): InputObligation => ({
-          clauseId: o.clauseId ?? null,
-          obligor: o.obligor,
-          partyRole: o.partyRole ?? null,
-          action: o.action,
-          due: o.due,
-          dueSpec: o.dueSpec ?? null,
-        }),
-      ),
-      current: isCurrentSchema(row.schema_version as number | null),
-    }
-  })
-
-  const intelligence = buildIntelligence(input, new Date())
+  // The page and the Intelligence assistant read through the same loader, so
+  // the Attention view and an answer about which contracts need attention
+  // cannot disagree.
+  const { intelligence, findings, partyNames } = await loadIntelligence(supabaseIntelligenceReader(supabase), orgId, new Date())
 
   // The risk view is reused unchanged, so it still takes the portfolio shape
   // it was built for -- absorbing a page into a section should not mean
-  // rewriting what already worked.
-  const riskRows: RawFinding[] = latest.flatMap(({ id, contractId }) =>
-    (findingsByAnalysis.get(id) ?? []).map((f) => ({
-      id: f.id as string,
-      contractId,
-      contractTitle: titleById.get(contractId)!,
-      clauseId: (f.clause_id as string | null) ?? null,
-      clauseNumber: null,
-      severity: f.severity as 'high' | 'medium' | 'low',
-      title: f.title as string,
-      reason: (locale === 'ar' ? ((f.reason_ar as string | null) ?? (f.reason as string)) : (f.reason as string)) as string,
-      ruleKey: (f.rule_key as string | null) ?? null,
-    })),
-  )
+  // rewriting what already worked. Locale resolution happens here rather than
+  // in the loader: a pure module has no business knowing the reader's
+  // language.
+  const riskRows: RawFinding[] = findings.map((f) => ({
+    id: f.id,
+    contractId: f.contractId,
+    contractTitle: f.contractTitle,
+    clauseId: f.clauseId,
+    clauseNumber: null,
+    severity: f.severity,
+    title: f.title,
+    reason: locale === 'ar' ? (f.reasonAr ?? f.reason) : f.reason,
+    ruleKey: f.ruleKey,
+  }))
 
-  const partyNamesByContract = Object.fromEntries(input.map((c) => [c.contractId, c.parties]))
+  const askHistory = view === 'ask' ? await loadPortfolioHistory(supabase, t('ask.notFound')) : []
 
   const shellStrings = {
     title: t('title'),
@@ -146,6 +62,7 @@ export default async function IntelligencePage({
       calendar: t('views.calendar'),
       obligations: t('views.obligations'),
       risk: t('views.risk'),
+      ask: t('views.ask'),
     },
     outdatedNotice: t.raw('outdatedNotice') as string,
   }
@@ -184,7 +101,7 @@ export default async function IntelligencePage({
               both: t('role.both'),
               third_party: t('role.third_party'),
             },
-            partyNames: partyNamesByContract,
+            partyNames,
           }}
         />
       )}
@@ -263,7 +180,7 @@ export default async function IntelligencePage({
               both: t('role.both'),
               third_party: t('role.third_party'),
             },
-            partyNames: partyNamesByContract,
+            partyNames,
           }}
         />
       )}
@@ -281,6 +198,25 @@ export default async function IntelligencePage({
             missingClause: tr('missingClause'),
             clauseLabel: tr.raw('clauseLabel') as string,
             severity: { high: tr('severity.high'), medium: tr('severity.medium'), low: tr('severity.low') },
+          }}
+        />
+      )}
+
+      {view === 'ask' && (
+        <AskView
+          initialMessages={askHistory.map((m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations, notFound: m.notFound }))}
+          strings={{
+            empty: t('ask.empty'),
+            placeholder: t('ask.placeholder'),
+            send: t('ask.send'),
+            notFound: t('ask.notFound'),
+            errors: {
+              unknown: t('ask.errors.unknown'),
+              ai_disabled: t('ask.errors.ai_disabled'),
+              quota_exceeded: t('ask.errors.quota_exceeded'),
+              upstream_failed: t('ask.errors.upstream_failed'),
+              invalid_request: t('ask.errors.unknown'),
+            },
           }}
         />
       )}

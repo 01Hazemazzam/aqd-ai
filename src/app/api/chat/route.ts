@@ -2,22 +2,15 @@ import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { embedTexts, toPgVector } from '@/lib/ai/embed'
 import { streamGeminiText, aiComplete, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
-import {
-  chatPrompt,
-  condensePrompt,
-  isNotFoundAnswer,
-  resolveCitations,
-  repairHebrewArabicHomoglyphs,
-  type RetrievedClause,
-  type ChatTurn,
-} from '@/lib/ai/prompts'
+import { contractPrompt, condensePrompt, isNotFoundAnswer, repairHebrewArabicHomoglyphs, type ChatTurn } from '@/lib/ai/prompts'
 import { needsHistoryContext, recentTurns, acceptCondensed, HISTORY_TURNS, CONDENSE_TIMEOUT_MS } from '@/lib/chat/condense'
+import { assembleContractContext, fitsBudget, resolveContractCitations, type ContextClause } from '@/lib/chat/contract-context'
+import { contractFactsFor } from '@/lib/chat/render'
+import { loadIntelligence } from '@/lib/intelligence/load'
+import { supabaseIntelligenceReader } from '@/lib/intelligence/supabase-reader'
+import { sseEvent } from '@/lib/chat/sse'
 
 const MATCH_COUNT = 6
-
-function sseEvent(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
-}
 
 export async function POST(request: Request) {
   const { contractId, question } = await request.json()
@@ -85,74 +78,106 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: string, data: unknown) => controller.enqueue(new TextEncoder().encode(sseEvent(event, data)))
 
-      const persistAndClose = async (content: string, notFound: boolean, matches: Array<RetrievedClause & { id: string }>) => {
-        const { data: assistantMessage } = await supabase
-          .from('chat_messages')
-          .insert({ chat_id: chatId, org_id: orgId, role: 'assistant', content, not_found: notFound })
-          .select('id')
-          .single()
-
-        const citations = assistantMessage && !notFound ? resolveCitations(content, matches) : []
-        if (citations.length) {
-          await supabase.from('citations').insert(
-            citations.map((c) => ({
-              message_id: assistantMessage!.id,
-              org_id: orgId,
-              clause_id: c.clauseId,
-              ordinal: c.ordinal,
-            })),
-          )
-        }
-
-        send('done', { messageId: assistantMessage?.id ?? null, citations, notFound })
-        controller.close()
-      }
-
       try {
-        // What gets embedded is the question as it would have been asked
-        // standalone. "And for the provider?" retrieves nothing on its own
-        // words; rewritten against the conversation it retrieves the clause
-        // the user actually means.
-        let searchQuestion = question
-        if (needsHistoryContext(question, history)) {
-          try {
-            const condense = condensePrompt(history, question)
-            // Raced against a deadline: a rewrite that arrives late has
-            // already cost the user more than the better retrieval is worth.
-            // The losing call is left to settle on its own rather than
-            // aborted -- it is a read with no side effects.
-            const rewritten = await Promise.race([
-              aiComplete('cheap', condense.system, condense.user).then((r) => r.text),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), CONDENSE_TIMEOUT_MS)),
-            ])
-            if (rewritten === null) console.info('[chat] condense timed out, using the question as asked')
-            else searchQuestion = acceptCondensed(rewritten, question)
-          } catch (err) {
-            // A failed rewrite must not fail the answer -- retrieving on the
-            // user's own words is exactly the previous behaviour.
-            console.warn('[chat] condense failed, using the question as asked:', err instanceof Error ? err.message : err)
-          }
-        }
+        const { data: version } = await supabase
+          .from('contract_versions')
+          .select('id')
+          .eq('contract_id', contractId)
+          .order('version_no', { ascending: false })
+          .limit(1)
+          .maybeSingle()
 
-        const [queryVector] = await embedTexts([searchQuestion])
-        const { data: matches } = await supabase.rpc('match_clauses', {
-          p_contract_id: contractId,
-          p_query_embedding: toPgVector(queryVector),
-          p_match_count: MATCH_COUNT,
+        const { data: allClauses } = version
+          ? await supabase
+              .from('clauses')
+              .select('id, clause_number, lang, body')
+              .eq('version_id', version.id)
+              .order('ordinal', { ascending: true })
+          : { data: null }
+
+        // Postgres speaks snake_case and the context module speaks camel;
+        // the mapping is explicit so a rename on either side is a type error
+        // rather than a silently-undefined clause number.
+        const toContextClause = (c: Record<string, unknown>): ContextClause => ({
+          id: c.id as string,
+          clauseNumber: (c.clause_number as string | null) ?? null,
+          lang: c.lang as 'ar' | 'en',
+          body: c.body as string,
         })
-        const retrieved = (matches ?? []) as Array<{ id: string; clause_number: string | null; lang: 'ar' | 'en'; body: string }>
 
-        if (retrieved.length === 0) {
-          await persistAndClose('NOT_FOUND', true, [])
+        const clauses = ((allClauses ?? []) as Array<Record<string, unknown>>).map(toContextClause)
+        if (clauses.length === 0) {
+          await persist('NOT_FOUND', true, [])
           return
         }
 
-        const promptClauses: RetrievedClause[] = retrieved.map((m) => ({ clauseNumber: m.clause_number, lang: m.lang, body: m.body }))
-        // The model answers the question the user actually typed, with the
-        // conversation for reference. The rewrite is a retrieval aid only --
-        // answering the rewrite instead would let a distorted paraphrase
-        // silently replace the user's question.
-        const { system, user } = chatPrompt(question, promptClauses, history)
+        // The whole document when it fits. Top-6 retrieval capped multi-clause
+        // reasoning at whatever six chunks an embedding happened to pull, and
+        // made NOT_FOUND ambiguous between "the document does not say" and
+        // "retrieval missed it".
+        let selected = clauses
+        let mode: 'full' | 'retrieved' = 'full'
+
+        if (!fitsBudget(clauses)) {
+          mode = 'retrieved'
+          // Condense runs ONLY here. Its output has only ever fed embedTexts,
+          // so on the full-context path it is a race the user waits behind in
+          // exchange for nothing at all.
+          let searchQuestion = question
+          if (needsHistoryContext(question, history)) {
+            try {
+              const condense = condensePrompt(history, question)
+              const rewritten = await Promise.race([
+                aiComplete('cheap', condense.system, condense.user).then((r) => r.text),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), CONDENSE_TIMEOUT_MS)),
+              ])
+              if (rewritten === null) console.info('[chat] condense timed out, using the question as asked')
+              else searchQuestion = acceptCondensed(rewritten, question)
+            } catch (err) {
+              // A failed rewrite must not fail the answer -- retrieving on the
+              // user's own words is exactly the previous behaviour.
+              console.warn('[chat] condense failed, using the question as asked:', err instanceof Error ? err.message : err)
+            }
+          }
+
+          const [queryVector] = await embedTexts([searchQuestion])
+          const { data: matches } = await supabase.rpc('match_clauses', {
+            p_contract_id: contractId,
+            p_query_embedding: toPgVector(queryVector),
+            p_match_count: MATCH_COUNT,
+          })
+          selected = ((matches ?? []) as Array<Record<string, unknown>>).map(toContextClause)
+          if (selected.length === 0) {
+            await persist('NOT_FOUND', true, [])
+            return
+          }
+        }
+
+        // The analysis this contract already has, read through the same loader
+        // the Intelligence views use -- so an answer about this contract's
+        // risks and deadlines cannot disagree with the page showing them.
+        const bundle = await loadIntelligence(supabaseIntelligenceReader(supabase), orgId, new Date())
+        const facts = contractFactsFor(bundle, contractId) ?? {
+          contractId,
+          title: '',
+          parties: [],
+          effectiveDate: null,
+          termLength: null,
+          termEnd: null,
+          // An unanalysed contract has no extraction to be outdated; saying so
+          // would be a coverage warning about work that was never asked for.
+          current: true,
+        }
+
+        const context = assembleContractContext(
+          selected,
+          bundle.findings.filter((f) => f.contractId === contractId),
+          bundle.intelligence.obligations.filter((o) => o.contractId === contractId),
+          facts,
+          mode,
+        )
+
+        const { system, user } = contractPrompt(question, context.text, mode, history)
 
         let fullText = ''
         for await (const chunk of streamGeminiText('main', system, user)) {
@@ -166,14 +191,13 @@ export async function POST(request: Request) {
         // rather than a token-level one.
         const repairedText = repairHebrewArabicHomoglyphs(fullText)
         const notFound = isNotFoundAnswer(repairedText)
-        const matchesWithId = retrieved.map((m) => ({ id: m.id, clauseNumber: m.clause_number, lang: m.lang, body: m.body }))
-        await persistAndClose(notFound ? 'NOT_FOUND' : repairedText, notFound, matchesWithId)
+        const content = notFound ? 'NOT_FOUND' : repairedText
+        await persist(content, notFound, notFound ? [] : resolveContractCitations(content, context.sources))
       } catch (err) {
         // Previously unlogged entirely -- a real 429 quota exhaustion (the
         // same Google free-tier daily limit already hit by the analysis
         // pipeline, see qa/FINDINGS.md) rendered as "Something went wrong
-        // answering that" with zero trace of why, anywhere. Logged here the
-        // same way analyze-actions.ts's runTask logs a task failure.
+        // answering that" with zero trace of why, anywhere.
         console.error('[chat] request failed:', err instanceof Error ? err.message : err)
         const errorCode =
           err instanceof AiDisabledError ? 'ai_disabled'
@@ -181,6 +205,33 @@ export async function POST(request: Request) {
           : err instanceof AiUpstreamError ? 'upstream_failed'
           : 'unknown'
         send('error', { error: errorCode })
+        controller.close()
+      }
+
+      async function persist(
+        content: string,
+        notFound: boolean,
+        citations: Array<{ ordinal: number; clauseId: string | null; findingId: string | null }>,
+      ) {
+        const { data: assistantMessage } = await supabase
+          .from('chat_messages')
+          .insert({ chat_id: chatId, org_id: orgId, role: 'assistant', content, not_found: notFound })
+          .select('id')
+          .single()
+
+        if (assistantMessage && citations.length) {
+          await supabase.from('citations').insert(
+            citations.map((c) => ({
+              message_id: assistantMessage.id,
+              org_id: orgId,
+              clause_id: c.clauseId,
+              finding_id: c.findingId,
+              ordinal: c.ordinal,
+            })),
+          )
+        }
+
+        send('done', { messageId: assistantMessage?.id ?? null, citations, notFound })
         controller.close()
       }
     },

@@ -32,6 +32,19 @@
 // for marginal benefit) -- they stay in the same tracked "fails under
 // exhaustion, not a regression" bucket as before, whether that now shows up
 // as a 429 or a timeout while the fallback works in the background.
+//
+// Every test here now carries an explicit 30s timeout. Two of them were
+// running on vitest's 5s default, which is shorter than a single real
+// generation with retry backoff -- so they failed intermittently on timing
+// alone, and a DIFFERENT one failed on each run. That is noise, not signal:
+// it trains the reader to ignore this file, which is the last thing a
+// cross-contract isolation test should do. Thirty seconds still fails fast
+// on a real 429, which is the condition these tests are meant to surface.
+// The three-question test gets 120s rather than 30s, because it makes three
+// sequential real generations and 30s could only ever cover one of them.
+// This file is now the slowest in the suite. That is the correct trade for a
+// cross-contract isolation guarantee: a fast test that fails at random tells
+// you nothing about whether contracts leak into each other.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { createClient } from '@supabase/supabase-js'
@@ -199,7 +212,7 @@ describe.skipIf(!hasKey)('grounding and cross-contract isolation (real embedding
   // already tight against just the retry backoff; it can't fit retry +
   // fallback both, which is now the actual (better) outcome under quota
   // exhaustion: a real answer instead of a fast clean failure.
-  it('Iso EN: a governing-law question returns NOT_FOUND, not the sibling contract\'s jurisdiction', async () => {
+  it('Iso EN: a governing-law question returns NOT_FOUND, not the sibling contract\'s jurisdiction', { timeout: 30000 }, async () => {
     const supabase = await signedInClient()
     const { answer, notFound, retrieved } = await askChat(supabase, isoEnContractId, 'What is the governing law of this agreement?')
 
@@ -209,7 +222,7 @@ describe.skipIf(!hasKey)('grounding and cross-contract isolation (real embedding
     for (const marker of SIBLING_JURISDICTION_MARKERS) expect(lower).not.toContain(marker)
   })
 
-  it('Iso EN: a liability question reflects Clause 3 (unlimited), not a numeric cap from another contract', async () => {
+  it('Iso EN: a liability question reflects Clause 3 (unlimited), not a numeric cap from another contract', { timeout: 30000 }, async () => {
     const supabase = await signedInClient()
     const { answer, notFound, citations } = await askChat(supabase, isoEnContractId, 'What is the limit on the Vendor\'s liability under this agreement?')
 
@@ -220,7 +233,7 @@ describe.skipIf(!hasKey)('grounding and cross-contract isolation (real embedding
     expect(answer).not.toContain('18600')
   })
 
-  it('Iso EN never surfaces facts that exist only in the sibling contract, across a small question set', { timeout: 30000 }, async () => {
+  it('Iso EN never surfaces facts that exist only in the sibling contract, across a small question set', { timeout: 120000 }, async () => {
     const supabase = await signedInClient()
     const questions = [
       'What is the governing law of this agreement?',
