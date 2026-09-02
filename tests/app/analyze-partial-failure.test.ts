@@ -29,6 +29,10 @@ vi.mock('@/lib/ai/router', async () => {
 })
 
 const analysesUpdate = vi.fn()
+// null = cache miss (existing tests' behavior, unchanged). Set by the
+// caching-bug test below to simulate a previous 'partial' analysis on the
+// same content_hash.
+let existingAnalysisRow: { id: string; status: string; error: string | null } | null = null
 
 function makeSupabase() {
   return {
@@ -41,11 +45,21 @@ function makeSupabase() {
       }
       if (table === 'analyses') {
         return {
-          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: existingAnalysisRow }) }) }) }),
           insert: () => ({ select: () => ({ single: async () => ({ data: { id: 'analysis-1' } }) }) }),
           update: (payload: unknown) => {
             analysesUpdate(payload)
-            return { eq: async () => ({ error: null }) }
+            // Two real call shapes hit this mock: the final `status: 'ready'`
+            // update is awaited directly off `.eq(...)` (a plain object
+            // works), but the existing-row reset chains `.eq(...).select('id').single()`
+            // before awaiting -- so `.eq(...)` must be both a thenable AND
+            // expose `.select()`, or the second shape throws.
+            return {
+              eq: (_column: string, value: string) => ({
+                select: () => ({ single: async () => ({ data: { id: value }, error: null }) }),
+                then: (resolve: (v: { error: null }) => void) => resolve({ error: null }),
+              }),
+            }
           },
         }
       }
@@ -68,6 +82,7 @@ vi.mock('@/lib/supabase/server', () => ({ createServerSupabase: async () => make
 beforeEach(() => {
   aiComplete.mockReset()
   analysesUpdate.mockClear()
+  existingAnalysisRow = null
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -109,5 +124,40 @@ describe('analyzeContract partial-failure surfacing', () => {
 
     const finalUpdate = analysesUpdate.mock.calls.find((c) => c[0].status === 'ready')
     expect(finalUpdate?.[0].error).toBeNull()
+  })
+
+  // Root cause of a real "clicking Re-analyze does nothing" report: the
+  // content_hash cache check only looked at `status === 'ready'`, but a
+  // partial analysis is ALSO status 'ready' (see the test above). Since the
+  // source PDF's content_hash never changes, every subsequent Re-analyze
+  // click short-circuited to the stale partial result with zero new AI
+  // calls -- confirmed live via a 148ms response with no Gemini/OpenRouter
+  // lines in the server log at all.
+  it('does not short-circuit on a previous partial analysis -- Re-analyze must actually retry', async () => {
+    existingAnalysisRow = { id: 'analysis-1', status: 'ready', error: 'partial' }
+    aiComplete.mockImplementation(async (_tier: string, system: string) => {
+      if (system === 'TASK:summary') return jsonResult({ summary: 'A summary.' })
+      if (system === 'TASK:fields') return jsonResult({ parties: null, effectiveDate: null, termLength: null, governingLaw: null, totalValue: null })
+      if (system === 'TASK:risks') return jsonResult({ findings: [] })
+      if (system === 'TASK:obligations') return jsonResult({ obligations: [] })
+      throw new Error('unexpected task')
+    })
+
+    const { analyzeContract } = await import('@/app/(app)/contracts/[id]/analyze-actions')
+    const result = await analyzeContract('contract-1')
+
+    expect(result).toEqual({ analysisId: 'analysis-1', cached: false })
+    expect(aiComplete).toHaveBeenCalledTimes(4)
+    const finalUpdate = analysesUpdate.mock.calls.find((c) => c[0].status === 'ready')
+    expect(finalUpdate?.[0].error).toBeNull()
+  })
+
+  it('does short-circuit on a previous fully-successful analysis, unchanged behavior', async () => {
+    existingAnalysisRow = { id: 'analysis-1', status: 'ready', error: null }
+    const { analyzeContract } = await import('@/app/(app)/contracts/[id]/analyze-actions')
+    const result = await analyzeContract('contract-1')
+
+    expect(result).toEqual({ analysisId: 'analysis-1', cached: true })
+    expect(aiComplete).not.toHaveBeenCalled()
   })
 })

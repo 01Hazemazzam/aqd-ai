@@ -125,6 +125,31 @@ describe('callGemini', () => {
     const err = await callGemini(GEMINI_SPEC, 'key', 'sys', 'user', fetchImpl).catch((e) => e)
     expect(err.retryable).toBe(false)
   })
+
+  // Root cause of the real "analysis takes minutes" report: no fetch call
+  // had a timeout at all, so a hanging upstream (real Gemini "high demand"
+  // 503s were observed hanging 30-40s+ per attempt) blocked indefinitely
+  // instead of failing fast into the next retry/fallback.
+  it('times out a hanging request and throws a retryable AiUpstreamError instead of hanging forever', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchImpl = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            const err = new Error('This operation was aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+      })
+      const promise = callGemini(GEMINI_SPEC, 'key', 'sys', 'user', fetchImpl)
+      const assertion = expect(promise).rejects.toMatchObject({ name: 'AiUpstreamError', retryable: true })
+      await vi.advanceTimersByTimeAsync(15000)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('callOpenRouter', () => {

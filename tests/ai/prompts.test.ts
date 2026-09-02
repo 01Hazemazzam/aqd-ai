@@ -42,6 +42,20 @@ describe('extractJson', () => {
     expect(() => extractJson('summary', '{"summary": "unterminated')).toThrow(MalformedAiResponseError)
   })
 
+  it('extracts the JSON object when the model appends unfenced trailing commentary', () => {
+    // A real gemini-flash-lite-latest response on the "summary" task failed
+    // with "Unexpected non-whitespace character after JSON at position 495"
+    // -- the model appended prose after a perfectly valid JSON object, with
+    // no code fence for the fenced-block path to strip.
+    const broken = '{"summary": "A services agreement."} Note that Clause 3 sets the recurring fee.'
+    expect(extractJson('summary', broken)).toEqual({ summary: 'A services agreement.' })
+  })
+
+  it('extracts a balanced JSON array with trailing commentary, ignoring nested brackets', () => {
+    const broken = '{"findings": [{"title": "A"}, {"title": "B"}]} -- 2 findings total, see above.'
+    expect(extractJson('risks', broken)).toEqual({ findings: [{ title: 'A' }, { title: 'B' }] })
+  })
+
   it('normalizes a stray Hebrew character inside otherwise-Arabic JSON text before parsing', () => {
     // A real Gemini response substituted Hebrew resh (U+05E8) for Arabic reh
     // (U+0631) mid-word in an otherwise-correct Arabic summary. This is a

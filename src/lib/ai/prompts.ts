@@ -213,16 +213,70 @@ function repairStrayBackslashes(text: string): string {
   return text.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\')
 }
 
+// A real gemini-flash-lite-latest response returned a valid JSON object
+// immediately followed by unfenced prose commentary ("...} Note that this
+// contract does not..."), failing with "Unexpected non-whitespace character
+// after JSON" even though the JSON value itself was perfectly formed -- the
+// lighter model is more prone to this than the main tier. Scans from the
+// first `{`/`[` and returns just the substring up to its matching close
+// (bracket-depth counting that respects string literals/escapes), so a
+// trailing-commentary response can still be parsed instead of discarded
+// whole.
+function extractBalancedJsonSubstring(text: string): string | null {
+  const start = text.search(/[{[]/)
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{' || ch === '[') {
+      depth++
+    } else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+function tryParseJson<T>(text: string): T | undefined {
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    /* fall through to the caller's next attempt */
+  }
+  try {
+    return JSON.parse(repairStrayBackslashes(text)) as T
+  } catch {
+    return undefined
+  }
+}
+
 export function extractJson<T>(task: string, text: string): T {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const candidate = repairHebrewArabicHomoglyphs((fenced ? fenced[1] : text).trim())
+
+  const direct = tryParseJson<T>(candidate)
+  if (direct !== undefined) return direct
+
+  const balanced = extractBalancedJsonSubstring(candidate)
+  const fromBalanced = balanced !== null ? tryParseJson<T>(balanced) : undefined
+  if (fromBalanced !== undefined) return fromBalanced
+
   try {
-    return JSON.parse(candidate) as T
+    JSON.parse(candidate)
   } catch (err) {
-    try {
-      return JSON.parse(repairStrayBackslashes(candidate)) as T
-    } catch {
-      throw new MalformedAiResponseError(task, err)
-    }
+    throw new MalformedAiResponseError(task, err)
   }
+  // Unreachable: JSON.parse(candidate) failing is exactly what got us here.
+  throw new MalformedAiResponseError(task, new Error('invalid JSON'))
 }

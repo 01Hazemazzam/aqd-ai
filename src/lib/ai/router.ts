@@ -129,6 +129,38 @@ function estimateCost(spec: ModelSpec, inputTokens: number, outputTokens: number
   return (inputTokens / 1_000_000) * spec.inputPricePerMTok + (outputTokens / 1_000_000) * spec.outputPricePerMTok
 }
 
+// Root cause of the "analysis takes minutes" report: none of the fetch calls
+// below had any timeout at all. Under real Gemini "high demand" 503s, a
+// single attempt was observed hanging 30-40s+ before finally responding --
+// with 4 retry attempts compounding that, one analyzeContract call was
+// measured at 154877ms and another at 175375ms (production log,
+// /tmp/nextdev.log) before it ever reached the OpenRouter fallback. A timeout
+// bounds each individual attempt so a stuck upstream fails fast into the next
+// retry/fallback instead of hanging indefinitely. Treated as retryable (like
+// a 5xx) since a client-side timeout is ambiguous -- it doesn't prove the
+// upstream is permanently down the way a 429 daily-quota body does.
+const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 15000)
+
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  providerLabel: string,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new AiUpstreamError(`${providerLabel} request timed out after ${REQUEST_TIMEOUT_MS}ms`, true)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function callAnthropic(
   spec: ModelSpec,
   apiKey: string,
@@ -136,7 +168,7 @@ export async function callAnthropic(
   userPrompt: string,
   fetchImpl: typeof fetch,
 ): Promise<AiCallResult> {
-  const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout(fetchImpl, 'Anthropic', 'https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -190,7 +222,7 @@ export async function callGemini(
   fetchImpl: typeof fetch,
 ): Promise<AiCallResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:generateContent`
-  const response = await fetchImpl(url, {
+  const response = await fetchWithTimeout(fetchImpl, 'Gemini', url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
@@ -256,7 +288,7 @@ export async function callOpenRouter(
   userPrompt: string,
   fetchImpl: typeof fetch,
 ): Promise<AiCallResult> {
-  const response = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetchWithTimeout(fetchImpl, 'OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
@@ -390,21 +422,29 @@ async function fetchStreamWithRetry(
   let lastError: AiUpstreamError | undefined
 
   for (let attempt = 0; attempt < attempts; attempt++) {
-    const response = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      }),
-    })
-    if (response.ok && response.body) return response
+    let err: AiUpstreamError
+    try {
+      const response = await fetchWithTimeout(fetchImpl, 'Gemini', url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        }),
+      })
+      if (response.ok && response.body) return response
 
-    // See callGemini's comment: a 429 here is the same hard daily quota,
-    // not worth retrying.
-    const retryable = response.status >= 500
-    const err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable, response.status)
-    if (!retryable || attempt === attempts - 1) throw err
+      // See callGemini's comment: a 429 here is the same hard daily quota,
+      // not worth retrying.
+      const retryable = response.status >= 500
+      err = new AiUpstreamError(`Gemini stream ${response.status}: ${await response.text()}`, retryable, response.status)
+    } catch (caught) {
+      // fetchWithTimeout's own AbortError -> AiUpstreamError conversion (a
+      // client-side timeout) lands here too, treated the same as a 5xx.
+      if (!(caught instanceof AiUpstreamError)) throw caught
+      err = caught
+    }
+    if (!err.retryable || attempt === attempts - 1) throw err
     lastError = err
     await sleep(2 ** attempt * 1000)
   }

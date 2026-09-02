@@ -108,11 +108,19 @@ export async function analyzeContract(contractId: string) {
 
   const { data: existing } = await supabase
     .from('analyses')
-    .select('id, status')
+    .select('id, status, error')
     .eq('org_id', orgId)
     .eq('content_hash', contentHash)
     .maybeSingle()
-  if (existing?.status === 'ready') return { analysisId: existing.id as string, cached: true }
+  // A 'partial' analysis (some tasks failed) also has status 'ready' -- that
+  // status alone can't gate the cache hit, or a Re-analyze click after a
+  // provider outage becomes a permanent no-op: same content_hash forever
+  // (the source PDF never changes), so it would keep short-circuiting to the
+  // stale partial result with zero new AI calls, no matter how many times
+  // the user clicks it. Confirmed live: a Re-analyze on a 'partial' analysis
+  // returned in 148ms with no Gemini/OpenRouter calls in the server log at
+  // all. Only a genuinely complete previous run should short-circuit.
+  if (existing?.status === 'ready' && !existing.error) return { analysisId: existing.id as string, cached: true }
 
   const { data: analysis, error: analysisError } = existing
     ? await supabase.from('analyses').update({ status: 'pending', error: null }).eq('id', existing.id).select('id').single()
