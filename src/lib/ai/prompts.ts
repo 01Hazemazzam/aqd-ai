@@ -135,8 +135,50 @@ function renderRetrievedClauses(clauses: RetrievedClause[]): string {
   return clauses.map((c, i) => `[${i + 1}]\n${c.body}`).join('\n\n')
 }
 
-export function chatPrompt(question: string, retrievedClauses: RetrievedClause[]) {
-  const system = `You are a contract Q&A assistant. Answer the user's question using ONLY the numbered clauses below -- they are the only excerpts retrieved as relevant to this question, not the whole document, so don't assume anything not shown here.
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+function renderTurns(turns: ChatTurn[]): string {
+  return turns.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
+}
+
+// Rewrites a follow-up into a question that stands on its own, so retrieval
+// has something to embed. Deliberately a rewriting task and nothing else:
+// the model is given the conversation but no clauses, so it has no material
+// to answer from even if it tried, and the worst it can produce is a bad
+// search query -- which acceptCondensed() then rejects in favour of the
+// user's own words.
+export function condensePrompt(history: ChatTurn[], question: string) {
+  const system = `You rewrite a follow-up question so that it can be understood on its own, without the conversation before it.
+
+Rules:
+- Output ONLY the rewritten question. No answer, no explanation, no quotes around it.
+- Replace pronouns and references ("it", "that clause", "the other party", "هذا البند") with the thing they refer to, taken from the conversation.
+- Keep the user's own language: an Arabic question stays Arabic, an English question stays English.
+- Keep it a question, and keep it about the same contract. Add nothing the user did not ask for -- do not broaden it, narrow it, or answer any part of it.
+- If the question already stands on its own, return it unchanged.
+
+Conversation so far:
+${renderTurns(history)}`
+
+  return { system, user: question }
+}
+
+export function chatPrompt(question: string, retrievedClauses: RetrievedClause[], history: ChatTurn[] = []) {
+  // History is given for one purpose: understanding what the user is asking.
+  // It is NOT a source. An earlier answer in this conversation was grounded
+  // in whatever was retrieved for THAT question, and treating it as fact here
+  // would let a claim outlive the evidence it was based on and accumulate
+  // across turns, uncited -- the exact laundering path that makes a
+  // citation-locked assistant stop being citation-locked.
+  const historyBlock =
+    history.length > 0
+      ? `\n\nEarlier in this conversation (for understanding what the user is referring to -- NOT a source of facts; every fact in your answer must still come from the numbered clauses below, and if the clauses do not support something you said earlier, do not repeat it):\n${renderTurns(history)}`
+      : ''
+
+  const system = `You are a contract Q&A assistant. Answer the user's question using ONLY the numbered clauses below -- they are the only excerpts retrieved as relevant to this question, not the whole document, so don't assume anything not shown here.${historyBlock}
 
 Hard rules:
 - Answer only from the clause text given. Never use outside knowledge, never guess, never invent a fact.

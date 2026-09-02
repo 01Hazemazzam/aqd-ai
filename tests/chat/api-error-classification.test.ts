@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const rpc = vi.fn()
+let priorMessages: Array<{ role: string; content: string; not_found: boolean }> = []
 function makeSupabase() {
   return {
     from: (table: string) => {
@@ -25,7 +26,14 @@ function makeSupabase() {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'chat-1' } }) }) }) }
       }
       if (table === 'chat_messages') {
-        return { insert: async () => ({ data: null, error: null }) }
+        return {
+          // The route reads prior turns before inserting this one, so a
+          // follow-up can be rewritten against the conversation.
+          select: () => ({
+            eq: () => ({ order: () => ({ limit: async () => ({ data: priorMessages }) }) }),
+          }),
+          insert: async () => ({ data: null, error: null }),
+        }
       }
       return { insert: async () => ({ data: null, error: null }) }
     },
@@ -51,6 +59,7 @@ beforeEach(() => {
     data: [{ id: 'clause-1', clause_number: '7', lang: 'en', body: 'Liability is limited.' }],
   })
   streamGeminiText.mockReset()
+  priorMessages = []
 })
 
 async function readSSE(response: Response) {

@@ -1,8 +1,17 @@
 import { createServerSupabase } from '@/lib/supabase/server'
 import { getCurrentOrgId } from '@/lib/org/current'
 import { embedTexts, toPgVector } from '@/lib/ai/embed'
-import { streamGeminiText, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
-import { chatPrompt, isNotFoundAnswer, resolveCitations, repairHebrewArabicHomoglyphs, type RetrievedClause } from '@/lib/ai/prompts'
+import { streamGeminiText, aiComplete, AiDisabledError, AiUpstreamError } from '@/lib/ai/router'
+import {
+  chatPrompt,
+  condensePrompt,
+  isNotFoundAnswer,
+  resolveCitations,
+  repairHebrewArabicHomoglyphs,
+  type RetrievedClause,
+  type ChatTurn,
+} from '@/lib/ai/prompts'
+import { needsHistoryContext, recentTurns, acceptCondensed, HISTORY_TURNS, CONDENSE_TIMEOUT_MS } from '@/lib/chat/condense'
 
 const MATCH_COUNT = 6
 
@@ -47,6 +56,29 @@ export async function POST(request: Request) {
   }
   const chatId = chat.id as string
 
+  // Read BEFORE inserting this turn, so the history is the conversation the
+  // question is a follow-up to and does not contain the question itself.
+  // Read from the database rather than accepted from the client: history
+  // steers retrieval and reaches the model, so a client-supplied version
+  // would be an unauthenticated way to put words in front of it. RLS scopes
+  // this to the caller's own org, like every other read here.
+  const { data: priorMessages } = await supabase
+    .from('chat_messages')
+    .select('role, content, not_found')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: true })
+    .limit(200)
+
+  const history: ChatTurn[] = recentTurns(
+    (priorMessages ?? [])
+      // A refusal carries no information about what the user meant, and
+      // replaying "NOT_FOUND" into the next prompt only invites the model to
+      // treat refusal as the house style.
+      .filter((m) => !m.not_found)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content as string })),
+    HISTORY_TURNS,
+  )
+
   await supabase.from('chat_messages').insert({ chat_id: chatId, org_id: orgId, role: 'user', content: question })
 
   const stream = new ReadableStream({
@@ -77,7 +109,32 @@ export async function POST(request: Request) {
       }
 
       try {
-        const [queryVector] = await embedTexts([question])
+        // What gets embedded is the question as it would have been asked
+        // standalone. "And for the provider?" retrieves nothing on its own
+        // words; rewritten against the conversation it retrieves the clause
+        // the user actually means.
+        let searchQuestion = question
+        if (needsHistoryContext(question, history)) {
+          try {
+            const condense = condensePrompt(history, question)
+            // Raced against a deadline: a rewrite that arrives late has
+            // already cost the user more than the better retrieval is worth.
+            // The losing call is left to settle on its own rather than
+            // aborted -- it is a read with no side effects.
+            const rewritten = await Promise.race([
+              aiComplete('cheap', condense.system, condense.user).then((r) => r.text),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), CONDENSE_TIMEOUT_MS)),
+            ])
+            if (rewritten === null) console.info('[chat] condense timed out, using the question as asked')
+            else searchQuestion = acceptCondensed(rewritten, question)
+          } catch (err) {
+            // A failed rewrite must not fail the answer -- retrieving on the
+            // user's own words is exactly the previous behaviour.
+            console.warn('[chat] condense failed, using the question as asked:', err instanceof Error ? err.message : err)
+          }
+        }
+
+        const [queryVector] = await embedTexts([searchQuestion])
         const { data: matches } = await supabase.rpc('match_clauses', {
           p_contract_id: contractId,
           p_query_embedding: toPgVector(queryVector),
@@ -91,7 +148,11 @@ export async function POST(request: Request) {
         }
 
         const promptClauses: RetrievedClause[] = retrieved.map((m) => ({ clauseNumber: m.clause_number, lang: m.lang, body: m.body }))
-        const { system, user } = chatPrompt(question, promptClauses)
+        // The model answers the question the user actually typed, with the
+        // conversation for reference. The rewrite is a retrieval aid only --
+        // answering the rewrite instead would let a distorted paraphrase
+        // silently replace the user's question.
+        const { system, user } = chatPrompt(question, promptClauses, history)
 
         let fullText = ''
         for await (const chunk of streamGeminiText('main', system, user)) {
