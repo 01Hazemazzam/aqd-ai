@@ -6,6 +6,7 @@ import { NavHeader, type NavLink } from '@/components/nav-header'
 
 const NAV_LINKS = [
   { href: '/contracts', key: 'contracts' },
+  { href: '/risk', key: 'risk' },
   { href: '/obligations', key: 'obligations' },
   { href: '/help', key: 'help' },
   { href: '/settings/team', key: 'team' },

@@ -22,6 +22,7 @@ import { SkeletonText, Skeleton } from '@/components/ui/skeleton'
 import { FadeIn, StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { AnalyzeButton } from './analyze-button'
 import { ChatPanel } from './chat-panel'
+import { ClauseHashFocus } from './clause-hash-focus'
 import { buildChatHistory } from '@/lib/chat/build-history'
 
 const SEVERITY_RANK = { high: 3, medium: 2, low: 1 } as const
@@ -94,6 +95,7 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-20 sm:px-10">
+      <ClauseHashFocus />
       <Link href="/contracts" className="mb-6 inline-flex items-center gap-1.5 text-sm text-accent hover:underline">
         <ArrowLeft size={15} aria-hidden="true" className="rtl:rotate-180" />
         {t('backToList')}

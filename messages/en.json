@@ -171,6 +171,7 @@
     "switchLanguage": "Switch language",
     "nav": {
       "contracts": "Contracts",
+      "risk": "Risk",
       "obligations": "Obligations",
       "help": "Help",
       "team": "Team",
@@ -178,6 +179,23 @@
       "signOut": "Sign out",
       "openMenu": "Open menu",
       "closeMenu": "Close menu"
+    }
+  },
+  "risk": {
+    "title": "Risk portfolio",
+    "subtitle": "Every risk finding across your analyzed contracts, worst first.",
+    "empty": "No risk findings yet",
+    "emptyDescription": "Analyze a contract and its findings will be consolidated here.",
+    "totalFindings": "Findings",
+    "contractsAffected": "Contracts affected",
+    "filterAll": "All",
+    "noMatches": "No findings at this severity.",
+    "missingClause": "Clause not present",
+    "clauseLabel": "Clause {number}",
+    "severity": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
     }
   },
   "obligations": {

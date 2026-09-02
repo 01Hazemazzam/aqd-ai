@@ -2,12 +2,12 @@
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { FileText, CalendarClock, HelpCircle, Users, ShieldCheck, Menu, X, LogOut } from 'lucide-react'
+import { FileText, ShieldAlert, CalendarClock, HelpCircle, Users, ShieldCheck, Menu, X, LogOut } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { SettingsToggles } from '@/components/settings-toggles'
 import { cn } from '@/components/ui/cn'
 
-const ICON = { contracts: FileText, obligations: CalendarClock, help: HelpCircle, team: Users, security: ShieldCheck } as const
+const ICON = { contracts: FileText, risk: ShieldAlert, obligations: CalendarClock, help: HelpCircle, team: Users, security: ShieldCheck } as const
 
 export interface NavLink {
   href: string
@@ -42,7 +42,10 @@ export function NavHeader({
           <Link href="/" className="font-wordmark text-lg font-semibold tracking-tight text-ink">
             {appName}
           </Link>
-          <nav className="hidden items-center gap-1 md:flex">
+          {/* lg, not md: six inline links plus the org name, settings toggles
+              and sign-out need ~912px, so switching at 768px overflowed the
+              header horizontally across the whole tablet range. */}
+          <nav className="hidden items-center gap-1 lg:flex">
             {links.map((link) => {
               const Icon = ICON[link.key]
               const active = pathname === link.href || pathname?.startsWith(`${link.href}/`)
@@ -81,7 +84,7 @@ export function NavHeader({
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? closeMenuLabel : openMenuLabel}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-surface-3 hover:text-ink md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-surface-3 hover:text-ink lg:hidden"
           >
             {open ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
           </button>
@@ -95,7 +98,7 @@ export function NavHeader({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-t border-edge bg-surface-2 md:hidden"
+            className="overflow-hidden border-t border-edge bg-surface-2 lg:hidden"
           >
             <div className="flex flex-col gap-1 px-6 py-3">
               {links.map((link) => {

@@ -15,6 +15,18 @@ The cached result of running the four AI tasks (summary, fields, risks, obligati
 **Risk finding**:
 One playbook rule's verdict against the Contract — a severity plus a bilingual reason, optionally anchored to a Clause (or to a Clause's absence).
 
+### Risk
+
+**Risk portfolio**:
+The cross-contract consolidation of every Risk finding from each Contract's latest Analysis, ranked worst-first. Carries portfolio-level counts (findings, Contracts affected), a severity breakdown, and a per-Contract grouping. Built by `buildRiskPortfolio`. Only the latest Analysis per Contract contributes — a re-analysis supersedes its predecessor rather than adding to it.
+_Avoid_: risk dashboard, risk report.
+
+**Severity**:
+A Risk finding's weight — high, medium, or low — assigned by the playbook rule that produced it. Orders every list in the Risk portfolio and colors the Clause gutter in the reader.
+
+**Drill-down**:
+The path from a Risk finding in the portfolio back to its evidence: to the exact Clause when the finding is anchored to one, and to the Contract when the finding is about a Clause the document is *missing*. Landing on a Clause scrolls to it and flashes it — the same landing a Citation gives.
+
 ### Obligations
 
 **Obligation**:

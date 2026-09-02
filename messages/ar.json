@@ -171,6 +171,7 @@
     "switchLanguage": "تغيير اللغة",
     "nav": {
       "contracts": "العقود",
+      "risk": "المخاطر",
       "obligations": "الالتزامات",
       "help": "المساعدة",
       "team": "الفريق",
@@ -178,6 +179,23 @@
       "signOut": "تسجيل الخروج",
       "openMenu": "فتح القائمة",
       "closeMenu": "إغلاق القائمة"
+    }
+  },
+  "risk": {
+    "title": "محفظة المخاطر",
+    "subtitle": "جميع نتائج المخاطر في عقودك المحللة، الأخطر أولًا.",
+    "empty": "لا توجد نتائج مخاطر بعد",
+    "emptyDescription": "حلّل عقدًا وستُجمع نتائجه هنا.",
+    "totalFindings": "النتائج",
+    "contractsAffected": "العقود المتأثرة",
+    "filterAll": "الكل",
+    "noMatches": "لا توجد نتائج بهذه الدرجة.",
+    "missingClause": "البند غير موجود",
+    "clauseLabel": "البند {number}",
+    "severity": {
+      "high": "مرتفعة",
+      "medium": "متوسطة",
+      "low": "منخفضة"
     }
   },
   "obligations": {

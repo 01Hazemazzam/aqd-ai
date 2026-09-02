@@ -3,6 +3,7 @@ import { useTranslations } from 'next-intl'
 import { Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { ChatWidget, type ChatMessage, type ChatTransport, type Delta } from '@/components/chat-widget'
+import { focusClause } from '@/lib/clause/focus'
 
 export interface Citation {
   ordinal: number
@@ -15,17 +16,6 @@ export interface Citation {
 // grounded-refusal answer.
 export type ContractChatExtra = { citations?: Citation[]; notFound?: boolean }
 export type ContractChatMessage = ChatMessage<ContractChatExtra>
-
-function scrollToAndFlashClause(clauseId: string) {
-  const el = document.getElementById(`clause-${clauseId}`)
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.classList.remove('clause-flash')
-  // Force a reflow so re-adding the class replays the animation even if
-  // the same clause was just flashed a moment ago.
-  void el.offsetWidth
-  el.classList.add('clause-flash')
-}
 
 // Splits "See [1] and [2]." into text/citation parts so citation numbers can
 // render as clickable spans without touching the rest of the sentence.
@@ -40,7 +30,7 @@ function renderWithCitations(content: string, citations: Citation[]) {
       <button
         key={i}
         type="button"
-        onClick={() => scrollToAndFlashClause(citation.clauseId)}
+        onClick={() => focusClause(citation.clauseId)}
         className="mx-0.5 rounded bg-brass/15 px-1 font-medium text-brass transition-colors hover:bg-brass/25 hover:underline"
       >
         {part}
