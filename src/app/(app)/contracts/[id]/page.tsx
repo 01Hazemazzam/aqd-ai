@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, FileWarning, AlertTriangle, Sparkles } from 'lucide-react'
+import { ArrowLeft, FileWarning, AlertTriangle, Sparkles, GitCompare } from 'lucide-react'
 import { getTranslations } from 'next-intl/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { ClauseRow } from '@/components/ui/clause-row'
@@ -9,6 +9,7 @@ import { SkeletonText, Skeleton } from '@/components/ui/skeleton'
 import { FadeIn, StaggerList, StaggerItem } from '@/components/ui/reveal'
 import { AnalyzeButton } from './analyze-button'
 import { AnalysisRail } from './analysis-rail'
+import { RevisionUpload } from './revision-upload'
 import { ClauseHashFocus } from './clause-hash-focus'
 import { buildChatHistory } from '@/lib/chat/build-history'
 
@@ -23,13 +24,27 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
   // not on each other's results) previously ran as five-plus sequential
   // round trips. Batched here -- same queries, same RLS, just not waiting on
   // each other -- cuts this page's DB latency roughly in half.
-  const [{ data: contract }, { data: version }, { data: analysis }, { data: chat }] = await Promise.all([
+  const [{ data: contract }, { data: versions }, { data: latestAnalysis }, { data: chat }] = await Promise.all([
     supabase.from('contracts').select('id, title, status, error').eq('id', id).maybeSingle(),
-    supabase.from('contract_versions').select('id').eq('contract_id', id).order('version_no', { ascending: false }).limit(1).maybeSingle(),
-    supabase.from('analyses').select('id, status, error, summary, fields, obligations').eq('contract_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    // Every version, not just the newest: the reader shows the current draft,
+    // but it has to be able to say which draft that is and offer the
+    // comparison, and one extra column costs nothing to carry.
+    supabase.from('contract_versions').select('id, version_no').eq('contract_id', id).order('version_no', { ascending: false }),
+    supabase.from('analyses').select('id, version_id, status, error, summary, fields, obligations').eq('contract_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('chats').select('id').eq('contract_id', id).maybeSingle(),
   ])
   if (!contract) notFound()
+  const version = versions?.[0] ?? null
+  const versionCount = versions?.length ?? 0
+
+  // An analysis belongs to the version it read, and this page renders the
+  // newest version. Once a contract can carry a revision those two come
+  // apart: the newest analysis is the previous draft's until the new one is
+  // analyzed, and showing its findings beside the new clause text would
+  // attribute risks to wording that no longer exists -- with the gutter
+  // severities landing on clause ids the document no longer contains.
+  // Dropping it says "not analyzed yet", which is what is true.
+  const analysis = latestAnalysis && latestAnalysis.version_id === version?.id ? latestAnalysis : null
 
   const [{ data: clauses }, { data: findings }, { data: chatMessages }] = await Promise.all([
     version
@@ -114,9 +129,30 @@ export default async function ContractReaderPage({ params }: { params: Promise<{
           {contract.title}
         </h1>
         {contract.status === 'ready' && !!clauses?.length && (
-          <AnalyzeButton contractId={id} label={analysis ? t('reanalyzeCta') : t('analyzeCta')} />
+          <div className="flex flex-wrap items-center gap-2">
+            <RevisionUpload contractId={id} />
+            <AnalyzeButton contractId={id} label={analysis ? t('reanalyzeCta') : t('analyzeCta')} />
+          </div>
         )}
       </div>
+
+      {/* Which draft is on screen. Silent until there is a second version --
+          on a contract with one version the answer is "the contract", and
+          saying "version 1 of 1" would only invite the question. */}
+      {versionCount > 1 && version && (
+        <div className="mb-8 flex flex-wrap items-center gap-3 rounded-xl border border-edge bg-surface-2 px-4 py-3">
+          <span className="text-sm font-semibold text-ink">
+            {t('versionOf', { number: version.version_no as number, total: versionCount })}
+          </span>
+          <Link
+            href={`/contracts/${id}/compare`}
+            className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+          >
+            <GitCompare size={15} aria-hidden="true" />
+            {t('compareCta')}
+          </Link>
+        </div>
+      )}
 
       {contract.status !== 'ready' && contract.status !== 'failed' && (
         <Card className="mb-6">

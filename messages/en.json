@@ -123,7 +123,9 @@
       "file_too_large": "That file is too large (50MB max).",
       "download_failed": "We couldn't read the uploaded file. Try again.",
       "parse_failed": "We couldn't extract text from this document.",
-      "unknown": "Something went wrong. Please try again."
+      "unknown": "Something went wrong. Please try again.",
+      "not_found": "We couldn't find that contract.",
+      "unchanged_file": "That file is identical to a version already on this contract, so there would be nothing to compare."
     },
     "analyzeCta": "Analyze",
     "reanalyzeCta": "Re-analyze",
@@ -178,6 +180,48 @@
         "quota_exceeded": "The AI provider's daily quota is exhausted for this model. Try again after it resets, or switch model tiers.",
         "upstream_failed": "Something went wrong answering that. Try again.",
         "unknown": "Something went wrong. Try again."
+      }
+    },
+    "versionOf": "Version {number} of {total}",
+    "versionShort": "Version {number}",
+    "compareCta": "What changed",
+    "revision": {
+      "uploadCta": "Upload revision"
+    },
+    "compare": {
+      "title": "What changed",
+      "backToContract": "Back to contract",
+      "onlyOneVersion": "Only one version so far",
+      "onlyOneVersionHint": "Upload the returned draft and this page will show what the other side changed.",
+      "baseLabel": "From",
+      "revisedLabel": "To",
+      "identical": "These two versions are word for word identical.",
+      "changesTitle": "Clause changes",
+      "showUnchanged": "Show unchanged clauses",
+      "hideUnchanged": "Hide unchanged clauses",
+      "wasNumbered": "was clause {number}",
+      "summary": {
+        "unchanged": "Unchanged",
+        "modified": "Modified",
+        "added": "Added",
+        "removed": "Removed"
+      },
+      "changeLabel": {
+        "unchanged": "Unchanged",
+        "modified": "Modified",
+        "added": "Added",
+        "removed": "Removed"
+      },
+      "risk": {
+        "title": "Risk profile",
+        "introduced": "New in this version",
+        "noLongerReported": "No longer reported",
+        "noLongerReportedHint": "These findings are not reported against this version. That is an observation about the analysis, not a confirmation that the risk was negotiated away.",
+        "carried": "Still reported",
+        "worse": "Graded higher",
+        "better": "Graded lower",
+        "unchangedProfile": "The same findings, at the same severities, in both versions.",
+        "notAnalyzed": "One of these versions has not been analyzed, so there is nothing to compare. Analyze both to see how the risk profile moved."
       }
     }
   },

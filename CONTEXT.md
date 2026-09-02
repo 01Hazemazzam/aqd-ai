@@ -12,6 +12,19 @@ A single numbered provision of a Contract, segmented from the uploaded document.
 **Analysis**:
 The cached result of running the four AI tasks (summary, fields, risks, obligations) over a Contract's clauses. Keyed by content hash so an unchanged document is a cache hit, not a re-spend.
 
+**Version**:
+One parse of one uploaded file -- the Clauses as they stood in that draft. Clauses, Analyses and Citations all hang off a Version rather than off the Contract, so a later draft cannot silently change what an earlier Analysis was about. A page that shows a Version's text shows that Version's Analysis or none: the newest Analysis of the Contract is the *previous* draft's until the new one is analysed, and its findings quote wording that no longer exists.
+
+**Revision**:
+A later Version of a Contract that already exists -- the counterparty's returned draft. Uploading one never creates a second Contract, and never costs the Version already there: a Revision that fails to parse leaves the previous draft readable and writes no Version at all. Re-uploading bytes the Contract already holds is refused rather than stored, because the comparison it would produce says nothing.
+
+**Revision comparison**:
+The pairing of two Versions' Clauses, and what each pairing says: unchanged, modified, added or removed. Recovered from the text in three passes -- identical text, then a shared clause number, then word overlap -- and never by asking a model, because a wrong pairing reports an amendment that nobody made. Built by `compareVersions`; see [ADR-0005](docs/adr/0005-revisions-compared-by-text.md).
+_Avoid_: diff (the diff is the word-level rendering of one modified Clause, not the pairing of the two documents).
+
+**Risk delta**:
+What a Revision did to the Risk findings: introduced, no longer reported, or carried with a Severity that moved. Findings pair on their playbook rule where they have one and on their title otherwise, so a re-worded title still tracks the same rule. **No longer reported** is deliberately not "resolved": the Analysis is a fresh reading of changed text and can change its mind, and only the first of those two is observed.
+
 **Risk finding**:
 One playbook rule's verdict against the Contract — a severity plus a bilingual reason, optionally anchored to a Clause (or to a Clause's absence).
 
